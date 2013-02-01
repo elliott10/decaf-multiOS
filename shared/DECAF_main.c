@@ -1,0 +1,573 @@
+/*
+Copyright (C) <2012> <Syracuse System Security (Sycure) Lab>
+
+DECAF is based on QEMU, a whole-system emulator. You can redistribute
+and modify it under the terms of the GNU GPL, version 3 or later,
+but it is made available WITHOUT ANY WARRANTY. See the top-level
+README file for more details.
+
+For more information about DECAF and other softwares, see our
+web site at:
+http://sycurelab.ecs.syr.edu/
+
+If you have any questions about DECAF,please post it on
+http://code.google.com/p/decaf-platform/
+*/
+
+/*
+ * DECAF_main.c
+ *
+ *  Created on: Oct 14, 2012
+ *      Author: lok
+ */
+
+#include <dlfcn.h>
+#include "sysemu.h"
+
+#include "shared/DECAF_main.h"
+#include "shared/DECAF_main_internal.h"
+#include "shared/DECAF_vm_compress.h"
+#include "shared/DECAF_cmds.h"
+#include "shared/hookapi.h"
+#include "DECAF_main_x86.h" //This is platform dependent
+#include "procmod.h" //remove this later
+
+plugin_interface_t *decaf_plugin = NULL;
+static void *plugin_handle = NULL;
+static char decaf_plugin_path[PATH_MAX] = "";
+static FILE *decaflog = NULL;
+
+mon_cmd_t DECAF_mon_cmds[] = {
+#include "DECAF_mon_cmds.h"
+		{ NULL, NULL , }, };
+
+mon_cmd_t DECAF_info_cmds[] = {
+#include "DECAF_info_cmds.h"
+		{ NULL, NULL , }, };
+
+gpa_t DECAF_get_phys_addr(CPUState* env, gva_t addr) {
+	int mmu_idx, index;
+	uint32_t phys_addr;
+
+	if (env == NULL ) {
+#ifdef DECAF_NO_FAIL_SAFE
+		return(INV_ADDR);
+#else
+		env = cpu_single_env ? cpu_single_env : first_cpu;
+#endif
+	}
+
+	index = (addr >> TARGET_PAGE_BITS) & (CPU_TLB_SIZE - 1);
+	mmu_idx = cpu_mmu_index(env);
+	if (__builtin_expect(
+			env->tlb_table[mmu_idx][index].addr_read
+					!= (addr & TARGET_PAGE_MASK), 0)) {
+		if (__builtin_expect(
+				env->tlb_table[mmu_idx][index].addr_code
+						!= (addr & TARGET_PAGE_MASK), 0)) {
+			phys_addr = cpu_get_phys_page_debug(env, addr & TARGET_PAGE_MASK);
+			if (phys_addr == -1)
+				return -1;
+			phys_addr += addr & (TARGET_PAGE_SIZE - 1);
+			return phys_addr;
+		}
+	}
+
+	void *p = (void *) ( (addr & TARGET_PAGE_MASK) + env->tlb_table[mmu_idx][index].addend);
+	return (gpa_t) qemu_ram_addr_from_host_nofail(p);
+}
+
+DECAF_errno_t DECAF_memory_rw(CPUState* env, uint32_t addr, void *buf, int len,
+		int is_write) {
+	int l;
+	target_ulong page, phys_addr;
+
+	if (env == NULL ) {
+#ifdef DECAF_NO_FAIL_SAFE
+		return(INV_ADDR);
+#else
+		env = cpu_single_env ? cpu_single_env : first_cpu;
+#endif
+	}
+
+	while (len > 0) {
+		page = addr & TARGET_PAGE_MASK;
+		phys_addr = DECAF_get_phys_addr(env, page);
+		if (phys_addr == -1 || phys_addr > ram_size) {
+			return -1;
+		}
+		l = (page + TARGET_PAGE_SIZE) - addr;
+		if (l > len)
+			l = len;
+
+		cpu_physical_memory_rw(phys_addr + (addr & ~TARGET_PAGE_MASK), buf, l,
+				is_write);
+
+		len -= l;
+		buf += l;
+		addr += l;
+	}
+	return 0;
+}
+
+DECAF_errno_t DECAF_memory_rw_with_cr3(CPUState* env, target_ulong cr3,
+		gva_t addr, void *buf, int len, int is_write) {
+	if (env == NULL ) {
+#ifdef DECAF_NO_FAIL_SAFE
+		return (INV_ADDR);
+#else
+		env = cpu_single_env ? cpu_single_env : first_cpu;
+#endif
+	}
+
+	int l;
+	gpa_t page, phys_addr;
+
+	while (len > 0) {
+		page = addr & TARGET_PAGE_MASK;
+		phys_addr = DECAF_get_physaddr_with_cr3(env, cr3, page);
+		if (phys_addr == -1)
+			return -1;
+		l = (page + TARGET_PAGE_SIZE) - addr;
+		if (l > len)
+			l = len;
+		cpu_physical_memory_rw(phys_addr + (addr & ~TARGET_PAGE_MASK), buf, l,
+				is_write);
+		len -= l;
+		buf += l;
+		addr += l;
+	}
+	return 0;
+}
+
+DECAF_errno_t DECAF_read_mem(CPUState* env, gva_t vaddr, int len, void *buf) {
+	return DECAF_memory_rw(env, vaddr, buf, len, 0);
+}
+
+DECAF_errno_t DECAF_write_mem(CPUState* env, gva_t vaddr, int len, void *buf) {
+	return DECAF_memory_rw(env, vaddr, buf, len, 1);
+}
+
+DECAF_errno_t DECAF_read_mem_with_cr3(CPUState* env, target_ulong cr3,
+		gva_t vaddr, int len, void *buf) {
+	return DECAF_memory_rw_with_cr3(env, cr3, vaddr, buf, len, 0);
+}
+
+DECAF_errno_t DECAF_write_mem_with_cr3(CPUState* env, target_ulong cr3,
+		gva_t vaddr, int len, void *buf) {
+	return DECAF_memory_rw_with_cr3(env, cr3, vaddr, buf, len, 1);
+}
+
+
+//Modified from tb_find_slow
+static TranslationBlock *DECAF_tb_find_slow(CPUState *env, target_ulong pc) {
+	TranslationBlock *tb, **ptb1;
+	unsigned int h;
+	tb_page_addr_t phys_pc, phys_page1;
+	target_ulong virt_page2;
+
+	tb_invalidated_flag = 0;
+
+//DECAF_printf("DECAF_tb_find_slow: phys_pc=%08x\n", phys_pc);
+
+	for (h = 0; h < CODE_GEN_PHYS_HASH_SIZE; h++) {
+		ptb1 = &tb_phys_hash[h];
+		for (;;) {
+			tb = *ptb1;
+			if (!tb)
+				break;
+			if (tb->pc + tb->cs_base == pc) {
+				goto found;
+			}
+			ptb1 = &tb->phys_hash_next;
+		}
+	}
+
+	not_found:
+	//DECAF_printf("DECAF_tb_find_slow: not found!\n");
+	return NULL ;
+
+	found:
+	//DECAF_printf("DECAF_tb_find_slow: found! pc=%08x size=%08x\n",tb->pc, tb->size);
+	return tb;
+}
+
+// This is the same as tb_find_fast except we invalidate at the end
+void DECAF_flushTranslationBlock_env(CPUState *env, uint32_t addr)
+{
+	TranslationBlock *tb;
+
+	if (env == NULL ) {
+#ifdef DECAF_NO_FAIL_SAFE
+		return;
+#else
+		env = cpu_single_env ? cpu_single_env : first_cpu;
+#endif
+
+	}
+
+//	tb = env->tb_jmp_cache[tb_jmp_cache_hash_func(addr)];
+//	if (unlikely(!tb || tb->pc+tb->cs_base != addr)) {
+		tb = DECAF_tb_find_slow(env, addr);
+//	}
+	if (tb == NULL ) {
+		return;
+	}
+	tb_phys_invalidate(tb, -1);
+}
+
+void DECAF_flushTranslationPage_env(CPUState* env, uint32_t addr) {
+	target_phys_addr_t p_addr;
+
+	if (env == NULL ) {
+#ifdef DECAF_NO_FAIL_SAFE
+		return;
+#else
+		env = cpu_single_env ? cpu_single_env : first_cpu;
+#endif
+	}
+
+	TranslationBlock *tb = DECAF_tb_find_slow(env, addr);
+	if (tb) {
+		tb_invalidate_phys_page_range(tb->page_addr[0],
+				tb->page_addr[0] + TARGET_PAGE_SIZE, 0);
+	}
+}
+
+int do_load_plugin(Monitor *mon, const QDict *qdict, QObject **ret_data) {
+	do_load_plugin_internal(mon, qdict_get_str(qdict, "filename"));
+	return (0);
+}
+
+void do_load_plugin_internal(Monitor *mon, const char *plugin_path) {
+	plugin_interface_t *(*init_plugin)(void);
+	char *error;
+
+	if (decaf_plugin_path[0]) {
+		monitor_printf(mon, "%s has already been loaded! \n", plugin_path);
+		return;
+	}
+
+	plugin_handle = dlopen(plugin_path, RTLD_NOW);
+	if (NULL == plugin_handle) {
+		// AWH
+		char tempbuf[128];
+		strncpy(tempbuf, dlerror(), 127);
+		monitor_printf(mon, "%s\n", tempbuf);
+		fprintf(stderr, "%s COULD NOT BE LOADED - ERR = [%s]\n", plugin_path,
+				tempbuf);
+		//assert(0);
+		return;
+	}
+
+	dlerror();
+
+	init_plugin = dlsym(plugin_handle, "init_plugin");
+	if ((error = dlerror()) != NULL ) {
+		fprintf(stderr, "%s\n", error);
+		dlclose(plugin_handle);
+		plugin_handle = NULL;
+		return;
+	}
+
+	decaf_plugin = init_plugin();
+
+	if (NULL == decaf_plugin) {
+		monitor_printf(mon, "fail to initialize the plugin!\n");
+		dlclose(plugin_handle);
+		plugin_handle = NULL;
+		return;
+	}
+#if defined(_REPLAY_) && !defined(_RECORD_)
+	do_enable_emulation(); //emulation is automatically enabled while replay.
+#endif
+#if 0 // AWH TAINT_ENABLED
+	plugin_taint_record_size = decaf_plugin->taint_record_size;
+#endif
+	decaflog = fopen("decaf.log", "w");
+	assert(decaflog != NULL);
+#if 0 //LOK: Removed // AWH TAINT_ENABLED
+	taintcheck_create();
+#endif
+
+#if 0 //TO BE REMOVED -heng
+	if (decaf_plugin->bdrv_open) {
+#if 0 // AWH - uses blockdev.c "drives" queue now
+		int i;
+		for (i = 0; i <= nb_drives; ++i) {
+			if (drives_table[i].bdrv)
+			decaf_plugin->bdrv_open(i, drives_table[i].bdrv);
+		}
+#else
+		BlockInterfaceType interType = IF_NONE;
+		int index = 0;
+		DriveInfo *drvInfo = NULL;
+		for (interType = IF_NONE; interType < IF_COUNT; interType++) {
+			index = 0;
+			do {
+				drvInfo = drive_get_by_index(interType, index);
+				if (drvInfo && drvInfo->bdrv)
+					decaf_plugin->bdrv_open(interType, index, drvInfo->bdrv);
+				index++;
+			} while (drvInfo);
+		}
+#endif // AWH
+	}
+#endif // Heng
+
+	strncpy(decaf_plugin_path, plugin_path, PATH_MAX);
+	monitor_printf(mon, "%s is loaded successfully!\n", plugin_path);
+}
+
+int do_unload_plugin(Monitor *mon, const QDict *qdict, QObject **ret_data) {
+	if (decaf_plugin_path[0]) {
+		decaf_plugin->plugin_cleanup();
+		fclose(decaflog);
+		decaflog = NULL;
+
+		//Flush all the callbacks that the plugin might have registered for
+		hookapi_flush_hooks(decaf_plugin_path);
+		DECAF_cleanup_insn_cbs();
+//LOK: Created a new callback interface for procmod
+		//        loadmainmodule_notify = createproc_notify = removeproc_notify = loadmodule_notify = NULL;
+
+		dlclose(plugin_handle);
+		plugin_handle = NULL;
+		decaf_plugin = NULL;
+
+#if 0 //LOK: Removed // AWH TAINT_ENABLED
+		taintcheck_cleanup();
+#endif
+		monitor_printf(default_mon, "%s is unloaded!\n", decaf_plugin_path);
+		decaf_plugin_path[0] = 0;
+	} else {
+		monitor_printf(default_mon,
+				"Can't unload plugin because no plugin was loaded!\n");
+	}
+
+	return (0);
+}
+
+void DECAF_stop_vm(void) {
+	vm_stop(RUN_STATE_PAUSED);
+}
+
+void DECAF_start_vm(void) {
+	vm_start();
+}
+
+void DECAF_loadvm(void *opaque) {
+	char **loadvm_args = opaque;
+	if (loadvm_args[0]) {
+		/* AWH do_loadvm*/load_vmstate(loadvm_args[0]);
+		free(loadvm_args[0]);
+		loadvm_args[0] = NULL;
+	}
+
+	if (loadvm_args[1]) {
+		do_load_plugin_internal(default_mon, loadvm_args[1]);
+		free(loadvm_args[1]);
+		loadvm_args[1] = NULL;
+	}
+
+	if (loadvm_args[2]) {
+		DECAF_after_loadvm(loadvm_args[2]);
+		free(loadvm_args[2]);
+		loadvm_args[2] = NULL;
+	}
+}
+
+static FILE *guestlog = NULL;
+
+static void DECAF_save(QEMUFile * f, void *opaque) {
+	uint32_t len = strlen(decaf_plugin_path) + 1;
+	qemu_put_be32(f, len);
+	qemu_put_buffer(f, (const uint8_t *) decaf_plugin_path, len); // AWH - cast
+
+	//save guest.log
+	//we only save guest.log when no plugin is loaded
+	if (len == 1) {
+		FILE *fp = fopen("guest.log", "r");
+		uint32_t size;
+		if (!fp) {
+			fprintf(stderr, "cannot open guest.log!\n");
+			return;
+		}
+
+		fseek(fp, 0, SEEK_END);
+		size = ftell(fp);
+		qemu_put_be32(f, size);
+		rewind(fp);
+		if (size > 0) {
+			DECAF_CompressState_t state;
+			if (DECAF_compress_open(&state, f) < 0)
+				return;
+
+			while (!feof(fp)) {
+				uint8_t buf[4096];
+				size_t res = fread(buf, 1, sizeof(buf), fp);
+				DECAF_compress_buf(&state, buf, res);
+			}
+
+			DECAF_compress_close(&state);
+		}
+		fclose(fp);
+	}
+
+	qemu_put_be32(f, 0x12345678);       //terminator
+}
+
+static int DECAF_load(QEMUFile * f, void *opaque, int version_id) {
+	uint32_t len = qemu_get_be32(f);
+	char tmp_plugin_path[PATH_MAX];
+
+	if (plugin_handle) {
+		do_unload_plugin(NULL, NULL, NULL ); // AWH - Added NULLs
+	}
+	qemu_get_buffer(f, (uint8_t *) tmp_plugin_path, len); // AWH - cast
+	if (tmp_plugin_path[len - 1] != 0)
+		return -EINVAL;
+
+	//load guest.log
+	if (len == 1) {
+		fclose(guestlog);
+		if (!(guestlog = fopen("guest.log", "w"))) {
+			fprintf(stderr, "cannot open guest.log for write!\n");
+			return -EINVAL;
+		}
+
+		uint32_t file_size = qemu_get_be32(f);
+		uint8_t buf[4096];
+		uint32_t i;
+		DECAF_CompressState_t state;
+		if (DECAF_decompress_open(&state, f) < 0)
+			return -EINVAL;
+
+		for (i = 0; i < file_size;) {
+			uint32_t len =
+					(sizeof(buf) < file_size - i) ? sizeof(buf) : file_size - i;
+			if (DECAF_decompress_buf(&state, buf, len) < 0)
+				return -EINVAL;
+
+			fwrite(buf, 1, len, guestlog);
+			i += len;
+		}
+		DECAF_decompress_close(&state);
+		fflush(guestlog);
+	}
+
+	if (len > 1)
+		do_load_plugin_internal(default_mon, tmp_plugin_path);
+
+	uint32_t terminator = qemu_get_be32(f);
+	if (terminator != 0x12345678)
+		return -EINVAL;
+
+	return 0;
+}
+
+extern void tainting_init(void);
+extern void function_map_init(void);
+extern void DECAF_callback_init(void);
+
+void DECAF_init(void) {
+	DECAF_callback_init();
+	tainting_init();
+	DECAF_virtdev_init();
+	// AWH - change in API, added NULL as first parm
+	/* Aravind - NOTE: DECAF_save *must* be called before function_map_save and DECAF_load must be called
+	 * before function_map_load for function maps to load properly during loadvm.
+	 * This is because, TEMU_load restores guest.log, which is read into function map.
+	 */
+	register_savevm(NULL, "DECAF", 0, 1, DECAF_save, DECAF_load, NULL );
+	DECAF_vm_compress_init();
+	function_map_init();
+	init_hookapi();
+	procmod_init();
+}
+
+/*
+ * NIC related functions
+ */
+#if 0 //TO BE REMOVED
+void DECAF_nic_receive(const uint8_t * buf, int size, int cur_pos, int start,
+		int stop) {
+	if (decaf_plugin && decaf_plugin->nic_recv)
+		decaf_plugin->nic_recv((uint8_t *) buf, size, cur_pos, start, stop);
+}
+
+void DECAF_nic_send(uint32_t addr, int size, uint8_t * buf) {
+	if (decaf_plugin && decaf_plugin->nic_send)
+		decaf_plugin->nic_send(addr, size, buf);
+}
+
+//TODO: to be removed -Heng
+void DECAF_nic_out(uint32_t addr, int size) {
+	if (!DECAF_emulation_started)
+		return;
+#if 0 //LOK: Removed // AWH TAINT_ENABLED
+	taintcheck_nic_out(addr, size);
+#endif
+}
+
+//TODO: to be removed -Heng
+void DECAF_nic_in(uint32_t addr, int size) {
+	if (!DECAF_emulation_started)
+		return;
+#if 0 //LOK: Removed // AWH TAINT_ENABLED
+	taintcheck_nic_in(addr, size);
+#endif
+}
+
+/*
+ * keyboard related functions
+ */
+void *DECAF_KbdState = NULL;
+
+void DECAF_read_keystroke(void *s) {
+	if (s != DECAF_KbdState)
+		return;
+
+	if (decaf_plugin && decaf_plugin->send_keystroke)
+		decaf_plugin->send_keystroke(cpu_single_env->tempidx);
+}
+#endif //Heng
+
+static void DECAF_virtdev_write_data(void *opaque, uint32_t addr, uint32_t val) {
+	static char syslogline[GUEST_MESSAGE_LEN];
+	static int pos = 0;
+
+	if (pos >= GUEST_MESSAGE_LEN - 2)
+		pos = GUEST_MESSAGE_LEN - 2;
+
+	if ((syslogline[pos++] = (char) val) == 0) {
+		handle_guest_message(syslogline);
+		fprintf(guestlog, "%s", syslogline);
+		fflush(guestlog);
+		pos = 0;
+	}
+}
+
+void DECAF_virtdev_init(void) {
+	int res = register_ioport_write(0x68, 1, 1, DECAF_virtdev_write_data,
+			NULL );
+	if (res) {
+		fprintf(stderr, "failure on initializing DECAF virtual device\n");
+		exit(-1);
+	}
+	if (!(guestlog = fopen("guest.log", "w"))) {
+		fprintf(stderr, "failure on opening guest.log \n");
+		exit(-1);
+	}
+}
+
+void DECAF_after_loadvm(const char *param) {
+	if (decaf_plugin && decaf_plugin->after_loadvm)
+		decaf_plugin->after_loadvm(param);
+}
+
+//TODO: to be removed -Heng
+int DECAF_bdrv_pread(void *bs, int64_t offset, void *buf, int count) {
+	return bdrv_pread((BlockDriverState *) bs, offset, buf, count);
+}
+
