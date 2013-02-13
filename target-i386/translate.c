@@ -2320,8 +2320,29 @@ static inline void gen_goto_tb(DisasContext *s, int tb_num, target_ulong eip)
     if ((pc & TARGET_PAGE_MASK) == (tb->pc & TARGET_PAGE_MASK) ||
         (pc & TARGET_PAGE_MASK) == ((s->pc - 1) & TARGET_PAGE_MASK))  {
         /* jump to same page: we can use a direct jump */
-        tcg_gen_goto_tb(tb_num);
         gen_jmp_im(eip);
+
+    	if(DECAF_is_callback_needed(DECAF_INSN_END_CB))
+    		gen_helper_DECAF_invoke_insn_end_callback(cpu_env);
+
+    	//By the time this function is called, the env->eip has already been updated to the
+    	//  new target. Keep this in mind. Take a look at the gen_jmp_tb code below
+    	if(DECAF_is_BlockEndCallback_needed(tb->pc, pc))
+    	{
+          //create temporary variables for tb and from
+          //LOK: Updated to use ptr and plain TCGv (target_long) types instead of i32
+          TCGv_ptr tmpTb = tcg_const_ptr((tcg_target_ulong)tb);
+          //LOK: We use tcg_temp_new since that defines a new target_ulong
+          // which can be confirmed inside tcg-op.h:2141
+    	  TCGv tmpFrom = tcg_temp_new();
+    	  tcg_gen_movi_tl(tmpFrom, cur_pc);
+          gen_helper_DECAF_invoke_block_end_callback(cpu_env, tmpTb, tmpFrom);
+
+          tcg_temp_free(tmpFrom);
+          tcg_temp_free_ptr(tmpTb);
+    	}
+
+    	tcg_gen_goto_tb(tb_num);
         tcg_gen_exit_tb((tcg_target_long)tb + tb_num);
     } else {
         /* jump to another page: currently not optimized */
