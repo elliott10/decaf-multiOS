@@ -1,0 +1,8 @@
+
+
+Feb 13 2013 by Heng Yin
+block_end and insn_end callbacks were missing due to block chaining.
+This update fixed this bug. The basic idea is to insert our
+instrumentation code in gen_goto_tb in addition to gen_eob.
+
+
