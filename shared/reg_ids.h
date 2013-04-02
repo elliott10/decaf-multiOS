@@ -25,7 +25,7 @@ http://code.google.com/p/decaf-platform/
 #ifndef _REG_IDS_H_
 #define _REG_IDS_H_
 
-#include "../disasm.h"
+#include "disasm.h"
 #include <assert.h>
 
 #define R_EAX 0

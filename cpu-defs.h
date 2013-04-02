@@ -153,7 +153,11 @@ typedef struct CPUWatchpoint {
     QTAILQ_ENTRY(CPUWatchpoint) entry;
 } CPUWatchpoint;
 
+#ifdef CONFIG_TCG_TAINT
+#define CPU_TEMP_BUF_NLONGS 256
+#else
 #define CPU_TEMP_BUF_NLONGS 128
+#endif /* CONFIG_TCG_TAINT */
 #define CPU_COMMON                                                      \
     struct TranslationBlock *current_tb; /* currently executing TB  */  \
     /* soft mmu support */                                              \

@@ -21,6 +21,9 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+#ifndef __TCG_H__ /* AWH */
+#define __TCG_H__
+
 #include "qemu-common.h"
 
 /* Target word size (must be identical to pointer size). */
@@ -142,12 +145,16 @@ typedef struct TCGPool {
 #define TCG_POOL_CHUNK_SIZE 32768
 
 #define TCG_MAX_LABELS 512
-
+#ifdef CONFIG_TCG_TAINT
+#define TCG_MAX_TEMPS 2048
+#define TCG_STATIC_CALL_ARGS_SIZE (32 * 10 * 2)
+#else
 #define TCG_MAX_TEMPS 512
 
 /* when the size of the arguments of a called function is smaller than
    this value, they are statically allocated in the TB stack frame */
 #define TCG_STATIC_CALL_ARGS_SIZE 128
+#endif /* CONFIG_TCG_TAINT */
 
 typedef enum TCGType {
     TCG_TYPE_I32,
@@ -591,3 +598,6 @@ extern uint8_t code_gen_prologue[];
 # define tcg_qemu_tb_exec(env, tb_ptr) \
     ((long REGPARM (*)(void *, void *))code_gen_prologue)(env, tb_ptr)
 #endif
+
+#endif /* __TCG_H__ */
+

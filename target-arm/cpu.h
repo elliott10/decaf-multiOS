@@ -79,6 +79,12 @@ struct arm_boot_info;
 typedef struct CPUARMState {
     /* Regs for current mode.  */
     uint32_t regs[16];
+#ifdef CONFIG_TCG_TAINT
+    uint32_t taint_regs[16];
+#endif /* CONFIG_TCG_TAINT */
+    uint32_t tempidx; // AWH
+    uint32_t tempidx2; // AWH
+
     /* Frequently accessed CPSR bits are stored separately for efficiently.
        This contains all the other bits.  Use cpsr_{read,write} to access
        the whole CPSR.  */
@@ -202,7 +208,11 @@ typedef struct CPUARMState {
     uint32_t exclusive_test;
     uint32_t exclusive_info;
 #endif
-
+#ifdef CONFIG_TCG_TAINT
+    uint32_t taint_exclusive_addr;
+    uint32_t taint_exclusive_val;
+    uint32_t taint_exclusive_high;
+#endif /* CONFIG_TCG_TAINT */
     /* iwMMXt coprocessor state.  */
     struct {
         uint64_t regs[16];

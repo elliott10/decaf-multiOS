@@ -38,6 +38,10 @@ typedef enum {
         DECAF_INSN_END_CB,
         DECAF_MEM_READ_CB,
         DECAF_MEM_WRITE_CB,
+        DECAF_EIP_CHECK_CB,
+        DECAF_KEYSTROKE_CB,//keystroke event
+        DECAF_NIC_REC_CB,
+        DECAF_NIC_SEND_CB,
 //#ifdef COMPONENT_VMI
         DECAF_TLB_EXEC_CB,
 //#endif
@@ -123,6 +127,33 @@ typedef struct _DECAF_Mem_Write_Params
 	gpa_t phy_addr;
 	DATA_TYPE dt;
 }DECAF_Mem_Write_Params;
+typedef struct _DECAF_EIP_Check_Params
+{
+	gva_t eip;
+}DECAF_EIP_Check_Params;
+typedef struct _DECAF_Keystroke_Params
+{
+	int32_t keycode;
+	uint32_t *taint_mark;//mark if this keystroke should be monitored
+
+}DECAF_Keystroke_Params;
+
+typedef struct _DECAF_Nic_Rec_Params
+{
+	uint8_t *buf;
+	int32_t size;
+	int32_t cur_pos;
+	int32_t start;
+	int32_t stop;
+}DECAF_Nic_Rec_Params;
+
+typedef struct _DECAF_Nic_Send_Params
+{
+	uint32_t addr;
+	int size;
+	uint8_t *buf;
+}DECAF_Nic_Send_Params;
+
 //LOK: A dummy type
 typedef union _DECAF_Callback_Params
 {
@@ -132,6 +163,10 @@ typedef union _DECAF_Callback_Params
   DECAF_Insn_End_Params ie;
   DECAF_Mem_Read_Params mr;
   DECAF_Mem_Write_Params mw;
+  DECAF_EIP_Check_Params ec;
+  DECAF_Keystroke_Params ks;
+  DECAF_Nic_Rec_Params nr;
+  DECAF_Nic_Send_Params ns;
 //#ifdef COMPONENT_VMI
   DECAF_Tlb_Exec_Params tx;
 //#endif

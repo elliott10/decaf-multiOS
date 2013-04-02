@@ -76,12 +76,13 @@ libobj-y += fpu/softfloat.o
 libobj-y += op_helper.o helper.o
 ifeq ($(TARGET_BASE_ARCH), i386)
 libobj-y += cpuid.o
+endif
 # AWH
 #libobj-y += libdecaf.a
 libobj-y += $(LIBDECAF)
-libobj-y += DECAF_main_x86.o
+#libobj-y += DECAF_main_x86.o
+libobj-y += DECAF_target.o
 LIBS+=-ldl
-endif
 libobj-$(TARGET_SPARC64) += vis_helper.o
 libobj-$(CONFIG_NEED_MMU) += mmu.o
 libobj-$(TARGET_ARM) += neon_helper.o iwmmxt_helper.o

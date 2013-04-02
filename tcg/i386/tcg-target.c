@@ -22,6 +22,14 @@
  * THE SOFTWARE.
  */
 
+#ifdef CONFIG_TCG_TAINT
+#include "tainting/taint_memory.h"
+//#include "TEMU_main.h"
+#ifndef CONFIG_SOFTMMU
+#error "CONFIG_TCG_TAINT can only be enabled with a SOFTMMU target!"
+#endif /* CONFIG_SOFTMMU */
+#endif /* CONFIG_TCG_TAINT */
+
 #ifndef NDEBUG
 static const char * const tcg_target_reg_names[TCG_TARGET_NB_REGS] = {
 #if TCG_TARGET_REG_BITS == 64
@@ -981,6 +989,22 @@ static void *qemu_st_helpers[4] = {
     __stq_mmu,
 };
 
+#ifdef CONFIG_TCG_TAINT
+static void *taint_qemu_ld_helpers[4] = {
+    __taint_ldb_mmu,
+    __taint_ldw_mmu,
+    __taint_ldl_mmu,
+    __taint_ldq_mmu,
+};
+
+static void *taint_qemu_st_helpers[4] = {
+    __taint_stb_mmu,
+    __taint_stw_mmu,
+    __taint_stl_mmu,
+    __taint_stq_mmu,
+};
+#endif /* CONFIG_TCG_TAINT */
+
 /* Perform the TLB load and compare.
 
    Inputs:
@@ -1434,6 +1458,243 @@ static void tcg_out_qemu_st(TCGContext *s, const TCGArg *args,
 #endif
 }
 
+#ifdef CONFIG_TCG_TAINT
+static void tcg_out_taint_qemu_st(TCGContext *s, const TCGArg *args, int opc) {
+    int data_reg, data_reg2 = 0;
+    int addrlo_idx;
+    int mem_index, s_bits;
+    int stack_adjust;
+    uint8_t *label_ptr[3];
+
+    data_reg = args[0];
+    addrlo_idx = 1;
+    if (TCG_TARGET_REG_BITS == 32 && opc == 3) {
+        data_reg2 = args[1];
+        addrlo_idx = 2;
+    }
+
+    mem_index = args[addrlo_idx + 1 + (TARGET_LONG_BITS > TCG_TARGET_REG_BITS)];
+    s_bits = opc;
+
+    tcg_out_tlb_load(s, addrlo_idx, mem_index, s_bits, args,
+                     label_ptr, offsetof(CPUTLBEntry, addr_write));
+
+    /* TLB Hit.  */
+    tcg_out_push(s, data_reg); // Store for call to qemu_st_direct() below
+    tcg_out_push(s, tcg_target_call_iarg_regs[0]); // Same
+    switch (opc) {
+    case 0:
+        tcg_out_calli(s, (tcg_target_long)__taint_stb_raw);
+        break;
+    case 1:
+        tcg_out_calli(s, (tcg_target_long)__taint_stw_raw);
+        break;
+    case 2:
+        tcg_out_calli(s, (tcg_target_long)__taint_stl_raw);
+        break;
+    // AWH: TODO: Doublecheck this
+    case 3:
+        tcg_out_calli(s, (tcg_target_long)__taint_stq_raw);
+        break;
+    default:
+        tcg_abort();
+    }
+    tcg_out_pop(s, tcg_target_call_iarg_regs[0]); // Pop for call to qemu_st_direct() below
+    tcg_out_pop(s, data_reg); // Same
+
+    tcg_out_qemu_st_direct(s, data_reg, data_reg2,
+                           tcg_target_call_iarg_regs[0], 0, opc);
+
+    /* jmp label2 */
+    tcg_out8(s, OPC_JMP_short);
+    label_ptr[2] = s->code_ptr;
+    s->code_ptr++;
+
+    /* TLB Miss.  */
+
+    /* label1: */
+    *label_ptr[0] = s->code_ptr - label_ptr[0] - 1;
+    if (TARGET_LONG_BITS > TCG_TARGET_REG_BITS) {
+        *label_ptr[1] = s->code_ptr - label_ptr[1] - 1;
+    }
+    /* XXX: move that code at the end of the TB */
+    /* TCG_TARGET_REG_BITS == 64 case in x86_op_defs[] */
+    if (TCG_TARGET_REG_BITS == 64) { /* qemu_st8/16/32/64 */
+        tcg_out_mov(s, (opc == 3 ? TCG_TYPE_I64 : TCG_TYPE_I32),
+                    TCG_REG_RSI, data_reg);
+        tcg_out_movi(s, TCG_TYPE_I32, TCG_REG_RDX, mem_index);
+        stack_adjust= 0;
+    /* TARGET_LONG_BITS <= TCG_TARGET_REG_BITS case in x86_op_defs[] */
+    } else if (TARGET_LONG_BITS == 32) {
+        tcg_out_mov(s, TCG_TYPE_I32, TCG_REG_EDX, data_reg);
+        if (opc == 3) {
+            tcg_out_mov(s, TCG_TYPE_I32, TCG_REG_ECX, data_reg2);
+            tcg_out_pushi(s, mem_index);
+            stack_adjust = 4;
+        } else {
+            tcg_out_movi(s, TCG_TYPE_I32, TCG_REG_ECX, mem_index);
+            stack_adjust = 0;
+        }
+    /* else case in x86_op_defs[] (32-bit target, 64-bit guest) */
+    } else {
+        if (opc == 3) { /* qemu_st64 */
+            tcg_out_mov(s, TCG_TYPE_I32, TCG_REG_EDX, args[addrlo_idx + 1]);
+            tcg_out_pushi(s, mem_index);
+            tcg_out_push(s, data_reg2);
+            tcg_out_push(s, data_reg);
+            stack_adjust = 12;
+        } else { /* qemu_st8/16/32 */
+            tcg_out_mov(s, TCG_TYPE_I32, TCG_REG_EDX, args[addrlo_idx + 1]);
+            switch(opc) {
+            case 0:
+                tcg_out_ext8u(s, TCG_REG_ECX, data_reg);
+                break;
+            case 1:
+                tcg_out_ext16u(s, TCG_REG_ECX, data_reg);
+                break;
+            case 2:
+                tcg_out_mov(s, TCG_TYPE_I32, TCG_REG_ECX, data_reg);
+                break;
+            }
+            tcg_out_pushi(s, mem_index);
+            stack_adjust = 4;
+        }
+    }
+
+    tcg_out_calli(s, (tcg_target_long)taint_qemu_st_helpers[s_bits]);
+
+    if (stack_adjust == (TCG_TARGET_REG_BITS / 8)) {
+        /* Pop and discard.  This is 2 bytes smaller than the add.  */
+        tcg_out_pop(s, TCG_REG_ECX);
+    } else if (stack_adjust != 0) {
+        tcg_out_addi(s, TCG_REG_CALL_STACK, stack_adjust);
+    }
+
+    /* label2: */
+    *label_ptr[2] = s->code_ptr - label_ptr[2] - 1;
+}
+
+static void tcg_out_taint_qemu_ld(TCGContext *s, const TCGArg *args, int opc)
+{
+    int data_reg, data_reg2 = 0;
+    int addrlo_idx;
+    int mem_index, s_bits, arg_idx;
+    uint8_t *label_ptr[3];
+
+    data_reg = args[0];
+    addrlo_idx = 1;
+    if (TCG_TARGET_REG_BITS == 32 && opc == 3) {
+        data_reg2 = args[1];
+        addrlo_idx = 2;
+    }
+
+    mem_index = args[addrlo_idx + 1 + (TARGET_LONG_BITS > TCG_TARGET_REG_BITS)];
+    s_bits = opc & 3;
+
+    tcg_out_tlb_load(s, addrlo_idx, mem_index, s_bits, args,
+                     label_ptr, offsetof(CPUTLBEntry, addr_read));
+
+    /* TLB Hit.  */
+    /* AWH - Before we call the functionality in the function 
+       tcg_out_qemu_ld_direct(), we push some parms, call our "raw" taint load 
+       functions, pop the original parms, and then call tcg_out_qemu_ld_direct(). */
+    if (s_bits == 3)
+      tcg_out_push(s, data_reg2);
+    tcg_out_push(s, data_reg);
+    tcg_out_push(s, tcg_target_call_iarg_regs[0]);
+
+    switch (s_bits) {
+    case 0:
+    case 0 | 4:
+        tcg_out_calli(s, (tcg_target_long)__taint_ldb_raw);
+        break;
+    case 1:
+    case 1 | 4:
+        tcg_out_calli(s, (tcg_target_long)__taint_ldw_raw);
+        break;
+    case 2:
+        tcg_out_calli(s, (tcg_target_long)__taint_ldl_raw);
+        break;
+    case 3:
+        tcg_out_calli(s, (tcg_target_long)__taint_ldq_raw);
+        break;
+    default:
+        tcg_abort();
+    }
+    tcg_out_pop(s, tcg_target_call_iarg_regs[0]);
+    tcg_out_pop(s, data_reg);
+    if (s_bits == 3)
+      tcg_out_pop(s, data_reg2);
+    /* AWH - End of our taint functionality for the TLB Hit case. */
+
+    tcg_out_qemu_ld_direct(s, data_reg, data_reg2,
+                           tcg_target_call_iarg_regs[0], 0, opc);
+
+    /* jmp label2 */
+    tcg_out8(s, OPC_JMP_short);
+    label_ptr[2] = s->code_ptr;
+    s->code_ptr++;
+
+    /* TLB Miss.  */
+
+    /* label1: */
+    *label_ptr[0] = s->code_ptr - label_ptr[0] - 1;
+    if (TARGET_LONG_BITS > TCG_TARGET_REG_BITS) {
+        *label_ptr[1] = s->code_ptr - label_ptr[1] - 1;
+    }
+    /* XXX: move that code at the end of the TB */
+    /* The first argument is already loaded with addrlo.  */
+    arg_idx = 1;
+    if (TCG_TARGET_REG_BITS == 32 && TARGET_LONG_BITS == 64) {
+        tcg_out_mov(s, TCG_TYPE_I32, tcg_target_call_iarg_regs[arg_idx++],
+                    args[addrlo_idx + 1]);
+    }
+    tcg_out_movi(s, TCG_TYPE_I32, tcg_target_call_iarg_regs[arg_idx],
+                 mem_index);
+    tcg_out_calli(s, (tcg_target_long)taint_qemu_ld_helpers[s_bits]);
+
+    switch(opc) {
+    case 0 | 4:
+        tcg_out_ext8s(s, data_reg, TCG_REG_EAX, P_REXW);
+        break;
+    case 1 | 4:
+        tcg_out_ext16s(s, data_reg, TCG_REG_EAX, P_REXW);
+        break;
+    case 0:
+        tcg_out_ext8u(s, data_reg, TCG_REG_EAX);
+        break;
+    case 1:
+        tcg_out_ext16u(s, data_reg, TCG_REG_EAX);
+        break;
+    case 2:
+        tcg_out_mov(s, TCG_TYPE_I32, data_reg, TCG_REG_EAX);
+        break;
+#if TCG_TARGET_REG_BITS == 64
+    case 2 | 4:
+        tcg_out_ext32s(s, data_reg, TCG_REG_EAX);
+        break;
+#endif
+    case 3:
+        if (TCG_TARGET_REG_BITS == 64) {
+            tcg_out_mov(s, TCG_TYPE_I64, data_reg, TCG_REG_RAX);
+        } else if (data_reg == TCG_REG_EDX) {
+            /* xchg %edx, %eax */
+            tcg_out_opc(s, OPC_XCHG_ax_r32 + TCG_REG_EDX, 0, 0, 0);
+            tcg_out_mov(s, TCG_TYPE_I32, data_reg2, TCG_REG_EAX);
+        } else {
+            tcg_out_mov(s, TCG_TYPE_I32, data_reg, TCG_REG_EAX);
+            tcg_out_mov(s, TCG_TYPE_I32, data_reg2, TCG_REG_EDX);
+        }
+        break;
+    default:
+        tcg_abort();
+    }
+
+    /* label2: */
+    *label_ptr[2] = s->code_ptr - label_ptr[2] - 1;
+}
+#endif /* CONFIG_TCG_TAINT */
+
 static inline void tcg_out_op(TCGContext *s, TCGOpcode opc,
                               const TCGArg *args, const int *const_args)
 {
@@ -1681,6 +1942,43 @@ static inline void tcg_out_op(TCGContext *s, TCGOpcode opc,
         tcg_out_qemu_st(s, args, 3);
         break;
 
+#ifdef CONFIG_TCG_TAINT
+    case INDEX_op_taint_qemu_ld8u:
+        tcg_out_taint_qemu_ld(s, args, 0);
+        break;
+    case INDEX_op_taint_qemu_ld8s:
+        tcg_out_taint_qemu_ld(s, args, 0 | 4);
+        break;
+    case INDEX_op_taint_qemu_ld16u:
+        tcg_out_taint_qemu_ld(s, args, 1);
+        break;
+    case INDEX_op_taint_qemu_ld16s:
+        tcg_out_taint_qemu_ld(s, args, 1 | 4);
+        break;
+#if TCG_TARGET_REG_BITS == 64
+    case INDEX_op_taint_qemu_ld32u:
+#endif
+    case INDEX_op_taint_qemu_ld32:
+        tcg_out_taint_qemu_ld(s, args, 2);
+        break;
+    case INDEX_op_taint_qemu_ld64:
+        tcg_out_taint_qemu_ld(s, args, 3);
+        break;
+
+    case INDEX_op_taint_qemu_st8:
+        tcg_out_taint_qemu_st(s, args, 0);
+        break;
+    case INDEX_op_taint_qemu_st16:
+        tcg_out_taint_qemu_st(s, args, 1);
+        break;
+    case INDEX_op_taint_qemu_st32:
+        tcg_out_taint_qemu_st(s, args, 2);
+        break;
+    case INDEX_op_taint_qemu_st64:
+        tcg_out_taint_qemu_st(s, args, 3);
+        break;
+#endif /* CONFIG_TCG_TAINT */
+
 #if TCG_TARGET_REG_BITS == 32
     case INDEX_op_brcond2_i32:
         tcg_out_brcond2(s, args, const_args, 0);
@@ -1919,6 +2217,48 @@ static const TCGTargetOpDef x86_op_defs[] = {
     { INDEX_op_qemu_st32, { "L", "L", "L" } },
     { INDEX_op_qemu_st64, { "L", "L", "L", "L" } },
 #endif
+#ifdef CONFIG_TCG_TAINT
+#if TCG_TARGET_REG_BITS == 64 // 64-bit host, 32/64-bit guest
+    { INDEX_op_taint_qemu_ld8u, { "r", "L" } },
+    { INDEX_op_taint_qemu_ld8s, { "r", "L" } },
+    { INDEX_op_taint_qemu_ld16u, { "r", "L" } },
+    { INDEX_op_taint_qemu_ld16s, { "r", "L" } },
+    { INDEX_op_taint_qemu_ld32, { "r", "L" } },
+    { INDEX_op_taint_qemu_ld32u, { "r", "L" } },
+    { INDEX_op_taint_qemu_ld32s, { "r", "L" } },
+    { INDEX_op_taint_qemu_ld64, { "r", "L" } },
+
+    { INDEX_op_taint_qemu_st8, { "L", "L" } },
+    { INDEX_op_taint_qemu_st16, { "L", "L" } },
+    { INDEX_op_taint_qemu_st32, { "L", "L" } },
+    { INDEX_op_taint_qemu_st64, { "L", "L" } },
+#elif TARGET_LONG_BITS <= TCG_TARGET_REG_BITS // 32-bit host, 32-bit guest
+    { INDEX_op_taint_qemu_ld8u, { "r", "L" } },
+    { INDEX_op_taint_qemu_ld8s, { "r", "L" } },
+    { INDEX_op_taint_qemu_ld16u, { "r", "L" } },
+    { INDEX_op_taint_qemu_ld16s, { "r", "L" } },
+    { INDEX_op_taint_qemu_ld32, { "r", "L" } },
+    { INDEX_op_taint_qemu_ld64, { "r", "r", "L" } },
+
+    { INDEX_op_taint_qemu_st8, { "cb", "L" } },
+    { INDEX_op_taint_qemu_st16, { "L", "L" } },
+    { INDEX_op_taint_qemu_st32, { "L", "L" } },
+    { INDEX_op_taint_qemu_st64, { "L", "L", "L" } },
+#else // 32-bit host, 64-bit guest
+    { INDEX_op_taint_qemu_ld8u, { "r", "L", "L" } },
+    { INDEX_op_taint_qemu_ld8s, { "r", "L", "L" } },
+    { INDEX_op_taint_qemu_ld16u, { "r", "L", "L" } },
+    { INDEX_op_taint_qemu_ld16s, { "r", "L", "L" } },
+    { INDEX_op_taint_qemu_ld32, { "r", "L", "L" } }, 
+    { INDEX_op_taint_qemu_ld64, { "r", "r", "L", "L" } },
+
+    { INDEX_op_taint_qemu_st8, { "cb", "L", "L" } },
+    { INDEX_op_taint_qemu_st16, { "L", "L", "L" } },
+    { INDEX_op_taint_qemu_st32, { "L", "L", "L" } },
+    { INDEX_op_taint_qemu_st64, { "L", "L", "L", "L" } },
+#endif
+#endif /* CONFIG_TCG_TAINT */
+
     { -1 },
 };
 

@@ -28,6 +28,56 @@ http://code.google.com/p/decaf-platform/
 #include "shared/DECAF_callback.h"
 #include "shared/DECAF_callback_to_QEMU.h"
 #include "shared/utils/HashtableWrapper.h"
+#ifdef CONFIG_TCG_TAINT
+#include "shared/tainting/analysis_log.h"
+#endif /* CONFIG_TCG_TAINT */
+#if 0 // AWH
+#define PUSH_ALL() __asm__ __volatile__ ("push %rax"); \
+__asm__ __volatile__ ("push %rbx"); \
+__asm__ __volatile__ ("push %rcx"); \
+__asm__ __volatile__ ("push %rdx"); \
+__asm__ __volatile__ ("push %rbp"); \
+__asm__ __volatile__ ("push %rdi"); \
+__asm__ __volatile__ ("push %rsi"); \
+__asm__ __volatile__ ("push %r8"); \
+__asm__ __volatile__ ("push %r9"); \
+__asm__ __volatile__ ("push %r10"); \
+__asm__ __volatile__ ("push %r11"); \
+__asm__ __volatile__ ("push %r12"); \
+__asm__ __volatile__ ("push %r13"); \
+__asm__ __volatile__ ("push %r14"); \
+__asm__ __volatile__ ("push %r15");
+
+#define POP_ALL() __asm__ __volatile__ ("pop %r15"); \
+__asm__ __volatile__ ("push %r14"); \
+__asm__ __volatile__ ("push %r13"); \
+__asm__ __volatile__ ("push %r12"); \
+__asm__ __volatile__ ("push %r11"); \
+__asm__ __volatile__ ("push %r10"); \
+__asm__ __volatile__ ("push %r9"); \
+__asm__ __volatile__ ("push %r8"); \
+__asm__ __volatile__ ("push %rsi"); \
+__asm__ __volatile__ ("push %rdi"); \
+__asm__ __volatile__ ("push %rbp"); \
+__asm__ __volatile__ ("push %rdx"); \
+__asm__ __volatile__ ("push %rcx"); \
+__asm__ __volatile__ ("push %rbx"); \
+__asm__ __volatile__ ("push %rax");
+#endif // AWH
+
+#if defined(TARGET_I386) && (HOST_LONG_BITS == 64)
+//#warning 64-bit macro
+#define PUSH_ALL() __asm__ __volatile__ ("push %rax\npush %rcx\npush %rdx");
+#define POP_ALL() __asm__ __volatile__ ("pop %rdx\npop %rcx\npop %rax");
+#elif defined(TARGET_I386) && (HOST_LONG_BITS == 32)
+//#warning 32-bit macro
+#define PUSH_ALL() __asm__ __volatile__ ("push %eax\npush %ecx\npush %edx");
+#define POP_ALL() __asm__ __volatile__ ("pop %edx\npop %ecx\npop %eax");
+#else
+//#warning Dummy PUSH_ALL() and POP_ALL() macros
+#define PUSH_ALL() ;
+#define POP_ALL() ;
+#endif // AWH
 
 //LOK: The callback logic is separated into two parts
 //  1. the interface between QEMU and callback
@@ -603,6 +653,8 @@ void helper_DECAF_invoke_block_begin_callback(CPUState* env, TranslationBlock* t
     return;
   }
 
+PUSH_ALL()
+
   params.bb.env = env;
   params.bb.tb = tb;
 
@@ -639,6 +691,7 @@ void helper_DECAF_invoke_block_begin_callback(CPUState* env, TranslationBlock* t
       }
     }
   }
+POP_ALL()
 }
 
 void helper_DECAF_invoke_block_end_callback(CPUState* env, TranslationBlock* tb, gva_t from)
@@ -647,6 +700,8 @@ void helper_DECAF_invoke_block_end_callback(CPUState* env, TranslationBlock* tb,
   DECAF_Callback_Params params;
 
   if (env == NULL) return;
+
+PUSH_ALL()
 
   params.be.env = env;
   params.be.tb = tb;
@@ -681,6 +736,9 @@ void helper_DECAF_invoke_block_end_callback(CPUState* env, TranslationBlock* tb,
       }
     }
   }
+
+POP_ALL()
+
 }
 
 void helper_DECAF_invoke_insn_begin_callback(CPUState* env)
@@ -689,6 +747,8 @@ void helper_DECAF_invoke_insn_begin_callback(CPUState* env)
 	DECAF_Callback_Params params;
 
 	if (env == 0) return;
+
+PUSH_ALL()
 
 	params.ib.env = env;
 
@@ -699,6 +759,7 @@ void helper_DECAF_invoke_insn_begin_callback(CPUState* env)
 		if(!cb_struct->enabled || *cb_struct->enabled)
 			cb_struct->callback(&params);
 	}
+POP_ALL()
 }
 
 void helper_DECAF_invoke_insn_end_callback(CPUState* env)
@@ -707,6 +768,7 @@ void helper_DECAF_invoke_insn_end_callback(CPUState* env)
         DECAF_Callback_Params params;
 
 	if (env == 0) return;
+PUSH_ALL()
 	params.ie.env = env;
 
 	//FIXME: not thread safe
@@ -716,6 +778,7 @@ void helper_DECAF_invoke_insn_end_callback(CPUState* env)
 		if(!cb_struct->enabled || *cb_struct->enabled)
 			cb_struct->callback(&params);
 	}
+POP_ALL()
 }
 
 void helper_DECAF_invoke_mem_read_callback(gva_t virt_addr,gpa_t phy_addr,DATA_TYPE data_type)
@@ -727,18 +790,57 @@ void helper_DECAF_invoke_mem_read_callback(gva_t virt_addr,gpa_t phy_addr,DATA_T
 	params.mr.phy_addr=phy_addr;
 	params.mr.virt_addr=virt_addr;
 
+	//if (cpu_single_env == 0) return;
 
-		//if (cpu_single_env == 0) return;
-
-		//FIXME: not thread safe
-		LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_MEM_READ_CB], link) {
-			// If it is a global callback or it is within the execution context,
-			// invoke this callback
-			if(!cb_struct->enabled || *cb_struct->enabled){
-				cb_struct->callback(&params);
-			}
+	//FIXME: not thread safe
+	LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_MEM_READ_CB], link)
+	{
+		// If it is a global callback or it is within the execution context,
+		// invoke this callback
+		if (!cb_struct->enabled || *cb_struct->enabled) {
+			cb_struct->callback(&params);
 		}
+	}
 }
+void helper_DECAF_invoke_eip_check_callback(gva_t eip)
+{
+	callback_struct_t *cb_struct;
+	DECAF_Callback_Params params;
+	params.ec.eip = eip;
+	//if (cpu_single_env == 0) return;
+
+	//FIXME: not thread safe
+	LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_EIP_CHECK_CB], link)
+	{
+		// If it is a global callback or it is within the execution context,
+		// invoke this callback
+		if (!cb_struct->enabled || *cb_struct->enabled) {
+			cb_struct->callback(&params);
+		}
+	}
+
+}
+
+void helper_DECAF_invoke_keystroke_callback(int keycode,uint32_t *taint_mark)
+{
+	callback_struct_t *cb_struct;
+	DECAF_Callback_Params params;
+	params.ks.keycode=keycode;
+	params.ks.taint_mark=taint_mark;
+	//if (cpu_single_env == 0) return;
+
+	//FIXME: not thread safe
+	LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_KEYSTROKE_CB], link)
+	{
+		// If it is a global callback or it is within the execution context,
+		// invoke this callback
+		if (!cb_struct->enabled || *cb_struct->enabled) {
+			cb_struct->callback(&params);
+		}
+	}
+
+}
+
 void helper_DECAF_invoke_mem_write_callback(gva_t virt_addr,gpa_t phy_addr,DATA_TYPE data_type)
 {
 
@@ -748,16 +850,54 @@ void helper_DECAF_invoke_mem_write_callback(gva_t virt_addr,gpa_t phy_addr,DATA_
 	params.mw.phy_addr=phy_addr;
 	params.mw.virt_addr=virt_addr;
 
+	//if (cpu_single_env == 0) return;
 
-		//if (cpu_single_env == 0) return;
+	//FIXME: not thread safe
+	LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_MEM_WRITE_CB], link)
+	{
+		// If it is a global callback or it is within the execution context,
+		// invoke this callback
+		if (!cb_struct->enabled || *cb_struct->enabled)
+			cb_struct->callback(&params);
+	}
+}
 
-		//FIXME: not thread safe
-		LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_MEM_WRITE_CB], link) {
-			// If it is a global callback or it is within the execution context,
-			// invoke this callback
-			if(!cb_struct->enabled || *cb_struct->enabled)
-				cb_struct->callback(&params);
-		}
+void helper_DECAF_invoke_nic_rec_callback(uint8_t * buf,int size,int cur_pos,int start,int stop)
+{
+	callback_struct_t *cb_struct;
+	DECAF_Callback_Params params;
+	params.nr.buf=buf;
+	params.nr.size=size;
+	params.nr.cur_pos=cur_pos;
+	params.nr.start=start;
+	params.nr.stop=stop;
+
+	//FIXME: not thread safe
+	LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_NIC_REC_CB], link)
+	{
+		// If it is a global callback or it is within the execution context,
+		// invoke this callback
+		if (!cb_struct->enabled || *cb_struct->enabled)
+			cb_struct->callback(&params);
+	}
+}
+
+void helper_DECAF_invoke_nic_send_callback(uint32_t addr,int size,uint8_t *buf)
+{
+	callback_struct_t *cb_struct;
+	DECAF_Callback_Params params;
+	params.ns.addr=addr;
+	params.ns.size=size;
+	params.ns.buf=buf;
+
+	//FIXME: not thread safe
+	LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_NIC_SEND_CB], link)
+	{
+		// If it is a global callback or it is within the execution context,
+		// invoke this callback
+		if (!cb_struct->enabled || *cb_struct->enabled)
+			cb_struct->callback(&params);
+	}
 }
 
 void DECAF_callback_init(void)

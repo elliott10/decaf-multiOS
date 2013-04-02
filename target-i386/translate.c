@@ -33,6 +33,10 @@
 #include "shared/DECAF_main_internal.h" // AWH
 #include "shared/DECAF_callback_to_QEMU.h"
 
+#ifdef CONFIG_TCG_TAINT
+#include "shared/tainting/taint_memory.h"
+#include "shared/tainting/tcg_taint.h"
+#endif /* CONFIG_TCG_TAINT */
 
 #define PREFIX_REPZ   0x01
 #define PREFIX_REPNZ  0x02
@@ -81,10 +85,16 @@ static target_ulong cur_pc;
 //#define MACRO_TEST   1
 
 /* global register indexes */
-static TCGv_ptr cpu_env;
+/* AWH static */ TCGv_ptr cpu_env;
 static TCGv cpu_A0, cpu_cc_src, cpu_cc_dst, cpu_cc_tmp;
 static TCGv_i32 cpu_cc_op;
 static TCGv cpu_regs[CPU_NB_REGS];
+#ifdef CONFIG_TCG_TAINT
+static TCGv taint_cpu_regs[CPU_NB_REGS];
+static TCGv /*taint_cpu_A0,*/ taint_cpu_cc_src, taint_cpu_cc_dst, taint_cpu_cc_tmp;
+// AWH - Now in shared/DECAF_tcg_taint.c static TCGv tempidx, tempidx2;
+#endif /* CONFIG_TCG_TAINT */
+
 /* local temps */
 static TCGv cpu_T[2], cpu_T3;
 /* local register indexes (only used inside old micro ops) */
@@ -93,9 +103,13 @@ static TCGv_ptr cpu_ptr0, cpu_ptr1;
 static TCGv_i32 cpu_tmp2_i32, cpu_tmp3_i32;
 static TCGv_i64 cpu_tmp1_i64;
 static TCGv cpu_tmp5;
-
+#ifdef CONFIG_TCG_TAINT
+/* This needs to be accessable to the taint generation function so that
+   this metadata can be updated as more taint IRs are added to the TB. */
+uint8_t gen_opc_cc_op[OPC_BUF_SIZE];
+#else
 static uint8_t gen_opc_cc_op[OPC_BUF_SIZE];
-
+#endif /* CONFIG_TCG_TAINT */
 #include "gen-icount.h"
 
 #ifdef TARGET_X86_64
@@ -421,6 +435,10 @@ static inline void gen_op_addl_T0_T1(void)
 
 static inline void gen_op_jmp_T0(void)
 {
+#ifdef CONFIG_TCG_TAINT
+	if(DECAF_is_callback_needed(DECAF_EIP_CHECK_CB))
+	    		gen_helper_DECAF_invoke_eip_check_callback(cpu_T[0]);
+#endif /* CONFIG_TCG_TAINT */
     tcg_gen_st_tl(cpu_T[0], cpu_env, offsetof(CPUState, eip));
 }
 
@@ -618,6 +636,10 @@ static inline void gen_jmp_im(target_ulong pc)
 	//LOK: Update the value of next_pc
 	next_pc = pc;
     tcg_gen_movi_tl(cpu_tmp0, pc);
+#ifdef CONFIG_TCG_TAINT
+	if(DECAF_is_callback_needed(DECAF_EIP_CHECK_CB))
+	    		gen_helper_DECAF_invoke_eip_check_callback(cpu_T[0]);
+#endif /* CONFIG_TCG_TAINT */
     tcg_gen_st_tl(cpu_tmp0, cpu_env, offsetof(CPUState, eip));
 }
 
@@ -6301,6 +6323,7 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
         tcg_gen_trunc_tl_i32(cpu_tmp2_i32, cpu_T[0]);
         gen_helper_in_func(ot, cpu_T[1], cpu_tmp2_i32);
         gen_op_mov_reg_T1(ot, R_EAX);
+
         if (use_icount) {
             gen_io_end();
             gen_jmp(s, s->pc - s->cs_base);
@@ -7931,6 +7954,18 @@ void optimize_flags_init(void)
                                     "cc_dst");
     cpu_cc_tmp = tcg_global_mem_new(TCG_AREG0, offsetof(CPUState, cc_tmp),
                                     "cc_tmp");
+#ifdef CONFIG_TCG_TAINT
+    taint_cpu_cc_src = tcg_global_mem_new(TCG_AREG0, offsetof(CPUState, taint_cc_src),
+                                    "taint_cc_src");
+    taint_cpu_cc_dst = tcg_global_mem_new(TCG_AREG0, offsetof(CPUState, taint_cc_dst),
+                                    "taint_cc_dst");
+    taint_cpu_cc_tmp = tcg_global_mem_new(TCG_AREG0, offsetof(CPUState, taint_cc_tmp),
+                                    "taint_cc_tmp");
+
+    shadow_arg[(int)cpu_cc_src] = taint_cpu_cc_src;
+    shadow_arg[(int)cpu_cc_dst] = taint_cpu_cc_dst;
+    shadow_arg[(int)cpu_cc_tmp] = taint_cpu_cc_tmp;
+#endif /* CONFIG_TCG_TAINT */
 
 #ifdef TARGET_X86_64
     cpu_regs[R_EAX] = tcg_global_mem_new_i64(TCG_AREG0,
@@ -7965,6 +8000,62 @@ void optimize_flags_init(void)
                                           offsetof(CPUState, regs[14]), "r14");
     cpu_regs[15] = tcg_global_mem_new_i64(TCG_AREG0,
                                           offsetof(CPUState, regs[15]), "r15");
+#ifdef CONFIG_TCG_TAINT
+    taint_cpu_regs[R_EAX] = tcg_global_mem_new_i64(TCG_AREG0,
+                                             offsetof(CPUState, taint_regs[R_EAX]), "taint_rax");
+    taint_cpu_regs[R_ECX] = tcg_global_mem_new_i64(TCG_AREG0,
+                                             offsetof(CPUState, taint_regs[R_ECX]), "taint_rcx");
+    taint_cpu_regs[R_EDX] = tcg_global_mem_new_i64(TCG_AREG0,
+                                             offsetof(CPUState, taint_regs[R_EDX]), "taint_rdx");
+    taint_cpu_regs[R_EBX] = tcg_global_mem_new_i64(TCG_AREG0,
+                                             offsetof(CPUState, taint_regs[R_EBX]), "taint_rbx");
+    taint_cpu_regs[R_ESP] = tcg_global_mem_new_i64(TCG_AREG0,
+                                             offsetof(CPUState, taint_regs[R_ESP]), "taint_rsp");
+    taint_cpu_regs[R_EBP] = tcg_global_mem_new_i64(TCG_AREG0,
+                                             offsetof(CPUState, taint_regs[R_EBP]), "taint_rbp");
+    taint_cpu_regs[R_ESI] = tcg_global_mem_new_i64(TCG_AREG0,
+                                             offsetof(CPUState, taint_regs[R_ESI]), "taint_rsi");
+    taint_cpu_regs[R_EDI] = tcg_global_mem_new_i64(TCG_AREG0,
+                                             offsetof(CPUState, taint_regs[R_EDI]), "taint_rdi");
+
+    taint_cpu_regs[8] = tcg_global_mem_new_i64(TCG_AREG0,
+                                             offsetof(CPUState, taint_regs[8]), "taint_rax");
+    taint_cpu_regs[9] = tcg_global_mem_new_i64(TCG_AREG0,
+                                             offsetof(CPUState, taint_regs[9]), "taint_rcx");
+    taint_cpu_regs[10] = tcg_global_mem_new_i64(TCG_AREG0,
+                                             offsetof(CPUState, taint_regs[10]), "taint_rdx");
+    taint_cpu_regs[11] = tcg_global_mem_new_i64(TCG_AREG0,
+                                             offsetof(CPUState, taint_regs[11]), "taint_rbx");
+    taint_cpu_regs[12] = tcg_global_mem_new_i64(TCG_AREG0,
+                                             offsetof(CPUState, taint_regs[12]), "taint_rsp");
+    taint_cpu_regs[13] = tcg_global_mem_new_i64(TCG_AREG0,
+                                             offsetof(CPUState, taint_regs[13]), "taint_rbp");
+    taint_cpu_regs[14] = tcg_global_mem_new_i64(TCG_AREG0,
+                                             offsetof(CPUState, taint_regs[14]), "taint_rsi");
+    taint_cpu_regs[15] = tcg_global_mem_new_i64(TCG_AREG0,
+                                             offsetof(CPUState, taint_regs[15]), "taint_rdi");
+
+    shadow_arg[cpu_regs[R_EAX]] = taint_cpu_regs[R_EAX];
+    shadow_arg[cpu_regs[R_ECX]] = taint_cpu_regs[R_ECX];
+    shadow_arg[cpu_regs[R_EDX]] = taint_cpu_regs[R_EDX];
+    shadow_arg[cpu_regs[R_EBX]] = taint_cpu_regs[R_EBX];
+    shadow_arg[cpu_regs[R_ESP]] = taint_cpu_regs[R_ESP];
+    shadow_arg[cpu_regs[R_EBP]] = taint_cpu_regs[R_EBP];
+    shadow_arg[cpu_regs[R_ESI]] = taint_cpu_regs[R_ESI];
+    shadow_arg[cpu_regs[R_EDI]] = taint_cpu_regs[R_EDI];
+    shadow_arg[cpu_regs[8]] = taint_cpu_regs[8];
+    shadow_arg[cpu_regs[9]] = taint_cpu_regs[9];
+    shadow_arg[cpu_regs[10]] = taint_cpu_regs[10];
+    shadow_arg[cpu_regs[11]] = taint_cpu_regs[11];
+    shadow_arg[cpu_regs[12]] = taint_cpu_regs[12];
+    shadow_arg[cpu_regs[13]] = taint_cpu_regs[13];
+    shadow_arg[cpu_regs[14]] = taint_cpu_regs[14];
+    shadow_arg[cpu_regs[15]] = taint_cpu_regs[15];
+
+    tempidx = tcg_global_mem_new_i64(TCG_AREG0,
+        offsetof(CPUX86State, tempidx), "tempidx");
+#endif /* CONFIG_TCG_TAINT */
+
 #else
     cpu_regs[R_EAX] = tcg_global_mem_new_i32(TCG_AREG0,
                                              offsetof(CPUState, regs[R_EAX]), "eax");
@@ -7982,6 +8073,39 @@ void optimize_flags_init(void)
                                              offsetof(CPUState, regs[R_ESI]), "esi");
     cpu_regs[R_EDI] = tcg_global_mem_new_i32(TCG_AREG0,
                                              offsetof(CPUState, regs[R_EDI]), "edi");
+#ifdef CONFIG_TCG_TAINT
+    taint_cpu_regs[R_EAX] = tcg_global_mem_new_i32(TCG_AREG0,
+                                             offsetof(CPUState, taint_regs[R_EAX]), "taint_eax");
+    taint_cpu_regs[R_ECX] = tcg_global_mem_new_i32(TCG_AREG0,
+                                             offsetof(CPUState, taint_regs[R_ECX]), "taint_ecx");
+    taint_cpu_regs[R_EDX] = tcg_global_mem_new_i32(TCG_AREG0,
+                                             offsetof(CPUState, taint_regs[R_EDX]), "taint_edx");
+    taint_cpu_regs[R_EBX] = tcg_global_mem_new_i32(TCG_AREG0,
+                                             offsetof(CPUState, taint_regs[R_EBX]), "taint_ebx");
+    taint_cpu_regs[R_ESP] = tcg_global_mem_new_i32(TCG_AREG0,
+                                             offsetof(CPUState, taint_regs[R_ESP]), "taint_esp");
+    taint_cpu_regs[R_EBP] = tcg_global_mem_new_i32(TCG_AREG0,
+                                             offsetof(CPUState, taint_regs[R_EBP]), "taint_ebp");
+    taint_cpu_regs[R_ESI] = tcg_global_mem_new_i32(TCG_AREG0,
+                                             offsetof(CPUState, taint_regs[R_ESI]), "taint_esi");
+    taint_cpu_regs[R_EDI] = tcg_global_mem_new_i32(TCG_AREG0,
+                                             offsetof(CPUState, taint_regs[R_EDI]), "taint_edi");
+
+    shadow_arg[cpu_regs[R_EAX]] = taint_cpu_regs[R_EAX];
+    shadow_arg[cpu_regs[R_ECX]] = taint_cpu_regs[R_ECX];
+    shadow_arg[cpu_regs[R_EDX]] = taint_cpu_regs[R_EDX];
+    shadow_arg[cpu_regs[R_EBX]] = taint_cpu_regs[R_EBX];
+    shadow_arg[cpu_regs[R_ESP]] = taint_cpu_regs[R_ESP];
+    shadow_arg[cpu_regs[R_EBP]] = taint_cpu_regs[R_EBP];
+    shadow_arg[cpu_regs[R_ESI]] = taint_cpu_regs[R_ESI];
+    shadow_arg[cpu_regs[R_EDI]] = taint_cpu_regs[R_EDI];
+
+    tempidx = tcg_global_mem_new_i32(TCG_AREG0,
+        offsetof(CPUX86State, tempidx), "tempidx");
+    tempidx2 = tcg_global_mem_new_i32(TCG_AREG0,
+        offsetof(CPUX86State, tempidx2), "tempidx2");
+#endif /* CONFIG_TCG_TAINT */
+
 #endif
 
     /* register helpers */
@@ -8094,11 +8218,20 @@ static inline void gen_intermediate_code_internal(CPUState *env,
       // since all of the other calls to tcg_const... don't have it
     }
 
+#ifdef CONFIG_TCG_TAINT
+    gen_old_opc_ptr = gen_opc_ptr;
+    gen_old_opparam_ptr = gen_opparam_ptr;
+    memset(gen_opc_instr_start, 0, sizeof(uint8_t) * (OPC_BUF_SIZE));
+#endif /* CONFIG_TCG_TAINT */
+
     for(;;) {
         if (unlikely(!QTAILQ_EMPTY(&env->breakpoints))) {
             QTAILQ_FOREACH(bp, &env->breakpoints, entry) {
                 if (bp->pc == pc_ptr &&
                     !((bp->flags & BP_CPU) && (tb->flags & HF_RF_MASK))) {
+#ifdef CONFIG_TCG_TAINT
+                    lj = optimize_taint(search_pc);
+#endif /* CONFIG_TCG_TAINT */
                     gen_debug(dc, pc_ptr - dc->cs_base);
                     break;
                 }
@@ -8126,7 +8259,14 @@ static inline void gen_intermediate_code_internal(CPUState *env,
         num_insns++;
         /* stop translation if indicated */
         if (dc->is_jmp)
+#ifdef CONFIG_TCG_TAINT
+        {
+            lj = optimize_taint(search_pc);
             break;
+        }
+#else
+            break;
+#endif /* CONFIG_TCG_TAINT */
         /* if single step mode, we generate only one instruction and
            generate an exception */
         /* if irq were inhibited with HF_INHIBIT_IRQ_MASK, we clear
@@ -8134,6 +8274,9 @@ static inline void gen_intermediate_code_internal(CPUState *env,
            change to be happen */
         if (dc->tf || dc->singlestep_enabled ||
             (flags & HF_INHIBIT_IRQ_MASK)) {
+#ifdef CONFIG_TCG_TAINT
+            lj = optimize_taint(search_pc);
+#endif /* CONFIG_TCG_TAINT */
             gen_jmp_im(pc_ptr - dc->cs_base);
             gen_eob(dc);
             break;
@@ -8142,11 +8285,17 @@ static inline void gen_intermediate_code_internal(CPUState *env,
         if (gen_opc_ptr >= gen_opc_end ||
             (pc_ptr - pc_start) >= (TARGET_PAGE_SIZE - 32) ||
             num_insns >= max_insns) {
+#ifdef CONFIG_TCG_TAINT
+            lj = optimize_taint(search_pc);
+#endif /* CONFIG_TCG_TAINT */
             gen_jmp_im(pc_ptr - dc->cs_base);
             gen_eob(dc);
             break;
         }
         if (singlestep) {
+#ifdef CONFIG_TCG_TAINT
+            lj = optimize_taint(search_pc);
+#endif /* CONFIG_TCG_TAINT */
             gen_jmp_im(pc_ptr - dc->cs_base);
             gen_eob(dc);
             break;

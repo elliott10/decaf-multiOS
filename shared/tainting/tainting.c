@@ -15,29 +15,12 @@ http://code.google.com/p/decaf-platform/
 */
 #include "shared/tainting/tainting.h"
 
-//tainting_struct_t taint_config_internal;
-//tainting_struct_t* taint_config = NULL;
-
 void tainting_init(void)
 {
-/*
-  taint_config_internal.taint_record_size = 0;
-  taint_config_internal.taint_propagate = NULL;
-  taint_config_internal.taint_disk = NULL;
-  taint_config_internal.read_disk_taint = NULL;
-  taint_config_internal.eip_tainted = NULL;
-  taint_config = &taint_config_internal; */
-
-#if 0 //LOK: Copied this over to tainting.c // AWH TAINT_ENABLED
-    taintcheck_init();
-    //EK
-    //taintInit_err = taintInit(ram_size);
-    if(taintInit_err){
-        printf("%s\n", strerror(taintInit_err));
-        exit(taintInit_err);
-    }
-    //xed2_init();
-#endif
+#ifdef CONFIG_TCG_TAINT
+        /* AWH - Taint tracking IR setup (testing) */
+        do_enable_tainting_internal();
+#endif /* CONFIG_TCG_TAINT */
 }
 
 void tainting_cleanup(void)

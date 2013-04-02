@@ -41,10 +41,7 @@ http://code.google.com/p/decaf-platform/
 #include "hookapi.h"
 #include "DECAF_callback.h"
 #include "DECAF_types.h"
-
-#ifdef TARGET_I386
-#include "DECAF_main_x86.h"
-#endif
+#include "DECAF_target.h"
 
 //LOK: Since the old interface registered for ALL possible basic blocks,
 // the addition of the optimized basic block callback means that
@@ -113,51 +110,47 @@ static inline void hookapi_insert(hookapi_record_t *record)
 
 static void hookapi_remove_all(void)
 {
-  hookapi_record_t *hrec;
-  int i;
+	hookapi_record_t *hrec;
+	int i;
 
-  for(i = 0; i<HOOKAPI_HTAB_SIZE; i++) {
-    struct hookapi_record_list_head * head = &hookapi_record_heads[i];
-	while(!QLIST_EMPTY(head)) {
-	  hrec = QLIST_FIRST(head);
-	  //LOK: Before we remove the record we must first unregister the bb callback
-	  if (hrec->cbhandle == DECAF_NULL_HANDLE)
-	  {
-	    fprintf(stderr, "ERROR: in hookapi_remove_all: We have a NULL handle for a bb callback\n");
-	  }
-	  DECAF_unregisterOptimizedBlockBeginCallback(hrec->cbhandle);
-	  QLIST_REMOVE(hrec, link);
-	  if(hrec->opaque != 0 && (uintptr_t)(hrec->opaque) != 1)
-	  {
-	    //LOK: This is weird - the comment below (at remove_hook) says we leave the freeing to the user!
-	    // thus, I have commented out the following line for consistency
-	    //However, in the hookapi_load function - the opaque is created by hookapi
-	    //This could be the intended behavior, but should still be double checked
-	    // and documented
-	    //TODO: Fix this malloc/free problem!
-            //g_free(hrec->opaque);
-	  }
-	  g_free(hrec);
+	for(i = 0; i<HOOKAPI_HTAB_SIZE; i++) {
+		struct hookapi_record_list_head * head = &hookapi_record_heads[i];
+		while(!QLIST_EMPTY(head)) {
+			hrec = QLIST_FIRST(head);
+			//LOK: Before we remove the record we must first unregister the bb callback
+			if (hrec->cbhandle == DECAF_NULL_HANDLE)
+			{
+				fprintf(stderr, "ERROR: in hookapi_remove_all: We have a NULL handle for a bb callback\n");
+			}
+			DECAF_unregisterOptimizedBlockBeginCallback(hrec->cbhandle);
+			QLIST_REMOVE(hrec, link);
+			if(hrec->opaque != 0 && (uintptr_t)(hrec->opaque) != 1)
+			{
+				//Normally, it is up to the user to free this opaque record. However, here we need to clean up
+				//all the hooks, which the user forgets to remove or does not get a chance to.
+				g_free(hrec->opaque);
+			}
+			g_free(hrec);
+		}
 	}
-  }
   
-  hookapi_handle_t *handle_info;
-  while(!QLIST_EMPTY(&hookapi_handle_head)) {
-    handle_info = QLIST_FIRST(&hookapi_handle_head);
-    QLIST_REMOVE(handle_info, link);
-    g_free(handle_info);
-  }    
+	hookapi_handle_t *handle_info;
+	while(!QLIST_EMPTY(&hookapi_handle_head)) {
+		handle_info = QLIST_FIRST(&hookapi_handle_head);
+		QLIST_REMOVE(handle_info, link);
+		g_free(handle_info);
+	}
 
-  //LOK: We can no longer just do clear - must first free the temporary records that we created before
-  list<fnhook_info_t>::iterator iter = fun_to_hook.begin();
-  while (iter != fun_to_hook.end())
-  {
-    g_free(iter->record);
-    iter->record = NULL;
-    iter = fun_to_hook.erase(iter);
-  }
+	//LOK: We can no longer just do clear - must first free the temporary records that we created before
+	list<fnhook_info_t>::iterator iter = fun_to_hook.begin();
+	while (iter != fun_to_hook.end())
+	{
+		g_free(iter->record);
+		iter->record = NULL;
+		iter = fun_to_hook.erase(iter);
+	}
 
-  fun_to_hook.clear();
+	fun_to_hook.clear();
 }
 
 static void hookapi_save(QEMUFile *f, void *opaque)

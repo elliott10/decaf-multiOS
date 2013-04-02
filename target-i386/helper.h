@@ -16,6 +16,7 @@ DEF_HELPER_2(DECAF_invoke_block_begin_callback, void, ptr, ptr)
 DEF_HELPER_3(DECAF_invoke_block_end_callback, void, ptr, ptr, tl)
 DEF_HELPER_1(DECAF_invoke_insn_begin_callback, void, ptr)
 DEF_HELPER_1(DECAF_invoke_insn_end_callback, void, ptr)
+DEF_HELPER_1(DECAF_invoke_eip_check_callback,void,tl)
 
 DEF_HELPER_0(lock, void)
 DEF_HELPER_0(unlock, void)

@@ -14,9 +14,9 @@ If you have any questions about DECAF,please post it on
 http://code.google.com/p/decaf-platform/
 */
 #include "qemu-common.h"
-#include "hw/hw.h" // AWH
+#include "hw/hw.h"
 #include "DECAF_main.h"
-#include "DECAF_main_x86.h"
+#include "DECAF_target.h"
 #include "hookapi.h"
 #include "read_linux.h"
 #include "shared/function_map.h"
@@ -616,9 +616,9 @@ void get_proc_modules(uint32_t pid, old_modinfo_t mi_array[], int size)
     process_info_t *proc = iter->second;
     int counter = 0;
     for (iter2 = proc->module_list.begin();
-	 iter2 != proc->module_list.end(); iter2++) {
+	 iter2 != proc->module_list.end(); iter2++, counter++) {
 	mod = *iter2;
-	strncpy(mi_array[counter++].name, mod->name.c_str(),
+	strncpy(mi_array[counter].name, mod->name.c_str(),
 		sizeof(mi_array[0].name) - 1);
 	mi_array[counter].base = mod->base;
 	mi_array[counter].size = mod->size;

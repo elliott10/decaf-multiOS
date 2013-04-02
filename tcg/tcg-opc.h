@@ -239,6 +239,82 @@ DEF(qemu_st64, 0, 2, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
 
 #endif /* TCG_TARGET_REG_BITS != 32 */
 
+#ifdef CONFIG_TCG_TAINT
+/* CONFIG_TCG_TAINT: For qemu_ld operations, the number of registers for
+output is doubled (since we're getting both data and taint data).
+For qemu_st operations, the number of registers for input is increased
+by the number of input data registers. */
+#if TCG_TARGET_REG_BITS == 32
+#if TARGET_LONG_BITS == 32
+DEF(taint_qemu_ld8u, 1, 1, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+#else
+DEF(taint_qemu_ld8u, 1, 2, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+#endif
+#if TARGET_LONG_BITS == 32
+DEF(taint_qemu_ld8s, 1, 1, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+#else
+DEF(taint_qemu_ld8s, 1, 2, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+#endif
+#if TARGET_LONG_BITS == 32
+DEF(taint_qemu_ld16u, 1, 1, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+#else
+DEF(taint_qemu_ld16u, 1, 2, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+#endif
+#if TARGET_LONG_BITS == 32
+DEF(taint_qemu_ld16s, 1, 1, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+#else
+DEF(taint_qemu_ld16s, 1, 2, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+#endif
+#if TARGET_LONG_BITS == 32
+DEF(taint_qemu_ld32, 1, 1, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+#else
+DEF(taint_qemu_ld32, 1, 2, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+#endif
+#if TARGET_LONG_BITS == 32
+DEF(taint_qemu_ld64, 2, 1, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+#else
+DEF(taint_qemu_ld64, 2, 2, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+#endif
+
+#if TARGET_LONG_BITS == 32
+DEF(taint_qemu_st8, 0, 2, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+#else
+DEF(taint_qemu_st8, 0, 3, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+#endif
+#if TARGET_LONG_BITS == 32
+DEF(taint_qemu_st16, 0, 2, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+#else
+DEF(taint_qemu_st16, 0, 3, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+#endif
+#if TARGET_LONG_BITS == 32
+DEF(taint_qemu_st32, 0, 2, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+#else
+DEF(taint_qemu_st32, 0, 3, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+#endif
+#if TARGET_LONG_BITS == 32
+DEF(taint_qemu_st64, 0, 3, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+#else
+DEF(taint_qemu_st64, 0, 4, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+#endif
+
+#else /* TCG_TARGET_REG_BITS == 32 */
+
+DEF(taint_qemu_ld8u, 1, 1, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+DEF(taint_qemu_ld8s, 1, 1, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+DEF(taint_qemu_ld16u, 1, 1, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+DEF(taint_qemu_ld16s, 1, 1, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+DEF(taint_qemu_ld32, 1, 1, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+DEF(taint_qemu_ld32u, 1, 1, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+DEF(taint_qemu_ld32s, 1, 1, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+DEF(taint_qemu_ld64, 1, 1, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+DEF(taint_qemu_st8, 0, 2, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+DEF(taint_qemu_st16, 0, 2, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+DEF(taint_qemu_st32, 0, 2, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+DEF(taint_qemu_st64, 0, 2, 1, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS)
+
+#endif /* TCG_TARGET_REG_BITS != 32 */
+#endif /* CONFIG_TCG_TAINT */
+
 #undef IMPL
 #undef IMPL64
 #undef DEF

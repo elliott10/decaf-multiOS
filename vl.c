@@ -174,6 +174,10 @@ int main(int argc, char **argv)
 
 #define MAX_VIRTIO_CONSOLES 1
 
+#ifdef CONFIG_TCG_TAINT
+void garbage_collect_taint(int flag); // shared/taint_memory.c
+#endif /* CONFIG_TCG_TAINT */
+
 static const char *data_dir;
 const char *bios_name = NULL;
 enum vga_retrace_method vga_retrace_method = VGA_RETRACE_DUMB;
@@ -1483,6 +1487,9 @@ static void main_loop(void)
         ti = profile_getclock();
 #endif
         last_io = main_loop_wait(nonblocking);
+#ifdef CONFIG_TCG_TAINT
+        garbage_collect_taint(0);
+#endif /* CONFIG_TCG_TAINT */
 #ifdef CONFIG_PROFILER
         dev_time += profile_getclock() - ti;
 #endif

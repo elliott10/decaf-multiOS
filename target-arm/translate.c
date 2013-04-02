@@ -32,6 +32,13 @@
 #include "helper.h"
 #define GEN_HELPER 1
 #include "helper.h"
+#include "shared/DECAF_callback_to_QEMU.h"
+//#include "DECAF_callback.h" // AWH
+
+#ifdef CONFIG_TCG_TAINT
+#include "shared/tainting/taint_memory.h"
+#include "shared/tainting/tcg_taint.h"
+#endif /* CONFIG_TCG_TAINT */
 
 #define ENABLE_ARCH_4T    arm_feature(env, ARM_FEATURE_V4T)
 #define ENABLE_ARCH_5     arm_feature(env, ARM_FEATURE_V5)
@@ -66,9 +73,13 @@ typedef struct DisasContext {
     int vec_len;
     int vec_stride;
 } DisasContext;
-
+#ifdef CONFIG_TCG_TAINT
+/* This needs to be accessable to the taint generation function so that
+   this metadata can be updated as more taint IRs are added to the TB. */
+uint32_t gen_opc_condexec_bits[OPC_BUF_SIZE];
+#else
 static uint32_t gen_opc_condexec_bits[OPC_BUF_SIZE];
-
+#endif /* CONFIG_TCG_TAINT */
 #if defined(CONFIG_USER_ONLY)
 #define IS_USER(s) 1
 #else
@@ -92,6 +103,14 @@ static TCGv_i32 cpu_exclusive_test;
 static TCGv_i32 cpu_exclusive_info;
 #endif
 
+#ifdef CONFIG_TCG_TAINT
+static TCGv_i64 taint_cpu_V0, taint_cpu_V1, taint_cpu_M0;
+static TCGv_i32 taint_cpu_R[16];
+static TCGv_i32 taint_cpu_exclusive_addr;
+static TCGv_i32 taint_cpu_exclusive_val;
+static TCGv_i32 taint_cpu_exclusive_high;
+#endif /* CONFIG_TCG_TAINT */
+
 /* FIXME:  These should be removed.  */
 static TCGv cpu_F0s, cpu_F1s;
 static TCGv_i64 cpu_F0d, cpu_F1d;
@@ -101,6 +120,14 @@ static TCGv_i64 cpu_F0d, cpu_F1d;
 static const char *regnames[] =
     { "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
       "r8", "r9", "r10", "r11", "r12", "r13", "r14", "pc" };
+
+#ifdef CONFIG_TCG_TAINT
+static const char *taint_regnames[] =
+  { "taint_r0", "taint_r1", "taint_r2", "taint_r3", "taint_r4",
+    "taint_r5", "taint_r6", "taint_r7", "taint_r8", "taint_r9",
+    "taint_r10", "taint_r11", "taint_r12", "taint_r13",
+    "taint_r14", "taint_pc" };
+#endif /* CONFIG_TCG_TAINT */
 
 /* initialize TCG globals.  */
 void arm_translate_init(void)
@@ -126,6 +153,28 @@ void arm_translate_init(void)
     cpu_exclusive_info = tcg_global_mem_new_i32(TCG_AREG0,
         offsetof(CPUState, exclusive_info), "exclusive_info");
 #endif
+#ifdef CONFIG_TCG_TAINT
+    for (i = 0; i < 16; i++) {
+      taint_cpu_R[i] = tcg_global_mem_new_i32(TCG_AREG0,
+        offsetof(CPUState, taint_regs[i]), taint_regnames[i]);
+      shadow_arg[(int)cpu_R[i]] = taint_cpu_R[i];
+    }
+
+    taint_cpu_exclusive_addr = tcg_global_mem_new_i32(TCG_AREG0,
+        offsetof(CPUState, taint_exclusive_addr), "taint_exclusive_addr");
+    taint_cpu_exclusive_val = tcg_global_mem_new_i32(TCG_AREG0,
+        offsetof(CPUState, taint_exclusive_val), "taint_exclusive_val");
+    taint_cpu_exclusive_high = tcg_global_mem_new_i32(TCG_AREG0,
+        offsetof(CPUState, taint_exclusive_high), "taint_exclusive_high");
+    shadow_arg[(int)cpu_exclusive_addr] = taint_cpu_exclusive_addr;
+    shadow_arg[(int)cpu_exclusive_val] = taint_cpu_exclusive_val;
+    shadow_arg[(int)cpu_exclusive_high] = taint_cpu_exclusive_high;
+
+    tempidx = tcg_global_mem_new_i32(TCG_AREG0,
+      offsetof(CPUState, tempidx), "tempidx");
+    tempidx2 = tcg_global_mem_new_i32(TCG_AREG0,
+      offsetof(CPUState, tempidx), "tempidx2");
+#endif /* CONFIG_TCG_TAINT */
 
 #define GEN_HELPER 2
 #include "helper.h"
@@ -9840,7 +9889,9 @@ static inline void gen_intermediate_code_internal(CPUState *env,
     uint32_t next_page_start;
     int num_insns;
     int max_insns;
-
+#ifdef CONFIG_TCG_TAINT
+    int not_tainted = 1;
+#endif /* CONFIG_TCG_TAINT */
     /* generate intermediate code */
     pc_start = tb->pc;
 
@@ -9919,6 +9970,32 @@ static inline void gen_intermediate_code_internal(CPUState *env,
         tcg_gen_movi_i32(tmp, 0);
         store_cpu_field(tmp, condexec_bits);
       }
+#if 1 // AWH - based off of the i386 target approach
+    if(DECAF_is_BlockBeginCallback_needed(tb->pc))
+    {
+      //LOK: While we can define a new TCG operation for tcg_gen_movi_ptr in tcg/tcg-op.h we will just use tcg_const_ptr macro instead
+      //tcg_target_ulong is defined in tcg.h and
+      // according to the definition, it is defined as 64 bits if UINTPTR_MAX is UINT64_MAX
+      // which implies that the TCG target is the HOST
+      TCGv_ptr tmpTb = tcg_const_ptr((tcg_target_ulong)tb);
+      gen_helper_DECAF_invoke_block_begin_callback(cpu_env, tmpTb);
+      tcg_temp_free_ptr(tmpTb);
+      //LOK: I wonder if I really have to call tcg_temp_free_ptr
+      // since all of the other calls to tcg_const... don't have it
+    }
+#else
+    if(DECAF_is_callback_needed(DECAF_BLOCK_BEGIN_CB))
+        gen_helper_DECAF_invoke_callback(tcg_const_i32(DECAF_BLOCK_BEGIN_CB));
+#endif // AWH
+
+#ifdef CONFIG_TCG_TAINT
+    if (taint_tracking_enabled) {
+        gen_old_opc_ptr = gen_opc_ptr;
+        gen_old_opparam_ptr = gen_opparam_ptr;
+        memset(gen_opc_instr_start, 0, sizeof(uint8_t) * (OPC_BUF_SIZE));
+    }
+#endif /* CONFIG_TCG_TAINT */
+
     do {
 #ifdef CONFIG_USER_ONLY
         /* Intercept jump to the magic kernel page.  */
@@ -9931,6 +10008,12 @@ static inline void gen_intermediate_code_internal(CPUState *env,
         }
 #else
         if (dc->pc >= 0xfffffff0 && IS_M(env)) {
+#ifdef CONFIG_TCG_TAINT
+            if (taint_tracking_enabled) {
+                lj = optimize_taint(search_pc);
+                not_tainted = 0;
+            }
+#endif /* CONFIG_TCG_TAINT */
             /* We always get here via a jump, so know we are not in a
                conditional execution block.  */
             gen_exception(EXCP_EXCEPTION_EXIT);
@@ -9942,6 +10025,12 @@ static inline void gen_intermediate_code_internal(CPUState *env,
         if (unlikely(!QTAILQ_EMPTY(&env->breakpoints))) {
             QTAILQ_FOREACH(bp, &env->breakpoints, entry) {
                 if (bp->pc == dc->pc) {
+#ifdef CONFIG_TCG_TAINT
+                    if (taint_tracking_enabled) {
+                        lj = optimize_taint(search_pc);
+                        not_tainted = 0;
+                    }
+#endif /* CONFIG_TCG_TAINT */
                     gen_exception_insn(dc, 0, EXCP_DEBUG);
                     /* Advance PC so that clearing the breakpoint will
                        invalidate this TB.  */
@@ -10004,6 +10093,11 @@ static inline void gen_intermediate_code_internal(CPUState *env,
              !singlestep &&
              dc->pc < next_page_start &&
              num_insns < max_insns);
+
+#ifdef CONFIG_TCG_TAINT
+    if (not_tainted && taint_tracking_enabled)
+        lj = optimize_taint(search_pc);
+#endif /* CONFIG_TCG_TAINT */
 
     if (tb->cflags & CF_LAST_IO) {
         if (dc->condjmp) {

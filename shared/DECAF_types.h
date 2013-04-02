@@ -22,7 +22,7 @@ http://code.google.com/p/decaf-platform/
 
 #ifndef DECAF_TYPES_H
 #define DECAF_TYPES_H
-
+#include <stdint.h>
 #include "qemu-common.h"
 
 typedef target_ulong gva_t;

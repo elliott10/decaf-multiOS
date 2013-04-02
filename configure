@@ -108,6 +108,8 @@ target_list=""
 # Distributions want to ensure that several features are compiled in, and it
 # is impossible without a --enable-foo that exits if a feature is not found.
 
+#AWH - TCG tainting off by default
+tcg_taint="no"
 bluez=""
 brlapi=""
 curl=""
@@ -796,6 +798,11 @@ for opt do
   ;;
   --disable-guest-agent) guest_agent="no"
   ;;
+  # AWH - TCG tainting
+  --enable-tcg-taint) tcg_taint="yes"
+  ;;
+  --disable-tcg-taint) tcg_taint="no"
+  ;;
   *) echo "ERROR: unknown option $opt"; show_help="yes"
   ;;
   esac
@@ -1088,6 +1095,9 @@ echo "  --disable-usb-redir      disable usb network redirection support"
 echo "  --enable-usb-redir       enable usb network redirection support"
 echo "  --disable-guest-agent    disable building of the QEMU Guest Agent"
 echo "  --enable-guest-agent     enable building of the QEMU Guest Agent"
+# AWH - TCG tainting
+echo "  --disable-tcg-taint      disable taint IR generation via TCG (default)"
+echo "  --enable-tcg-taint       enable taint IR generation via TCG"
 echo ""
 echo "NOTE: The object files are built at the place where configure is launched"
 exit 1
@@ -2721,6 +2731,7 @@ fi
 # End of CC checks
 # After here, no more $cc or $ld runs
 
+# AWH - Comment out for debugging purposes
 if test "$debug" = "no" ; then
   CFLAGS="-O2 $CFLAGS"
 fi
@@ -2884,6 +2895,8 @@ echo "usb net redir     $usb_redir"
 echo "OpenGL support    $opengl"
 echo "libiscsi support  $libiscsi"
 echo "build guest agent $guest_agent"
+# AWH - TCG tainting
+echo "enable TCG taint  $tcg_taint"
 
 if test "$sdl_too_old" = "yes"; then
 echo "-> Your SDL version is too old - please upgrade to have SDL support"
@@ -2925,6 +2938,12 @@ case "$cpu" in
     fi
   ;;
 esac
+
+#AWH - TCG tainting
+if test "$tcg_taint" = "yes" ; then
+  echo "CONFIG_TCG_TAINT=y" >> $config_host_mak
+fi
+
 echo "ARCH=$ARCH" >> $config_host_mak
 if test "$debug_tcg" = "yes" ; then
   echo "CONFIG_DEBUG_TCG=y" >> $config_host_mak

@@ -27,7 +27,12 @@
 #define NO_CPU_IO_DEFS
 #include "cpu.h"
 #include "disas.h"
+#ifdef CONFIG_TCG_TAINT
+#include "tcg-op.h"
+#include "tainting/taint_memory.h"
+#else
 #include "tcg.h"
+#endif /* CONFIG_TCG_TAINT */
 #include "qemu-timer.h"
 
 /* code generation context */
@@ -73,7 +78,10 @@ int cpu_gen_code(CPUState *env, TranslationBlock *tb, int *gen_code_size_ptr)
     ti = profile_getclock();
 #endif
     tcg_func_start(s);
-
+#ifdef CONFIG_TCG_TAINT
+    if (taint_tracking_enabled)
+        clean_shadow_arg();
+#endif /* CONFIG_TCG_TAINT */
     gen_intermediate_code(env, tb);
 
     /* generate machine code */
@@ -129,7 +137,10 @@ int cpu_restore_state(TranslationBlock *tb,
     ti = profile_getclock();
 #endif
     tcg_func_start(s);
-
+#ifdef CONFIG_TCG_TAINT
+    if (taint_tracking_enabled)
+        clean_shadow_arg();
+#endif /* CONFIG_TCG_TAINT */
     gen_intermediate_code_pc(env, tb);
 
     if (use_icount) {

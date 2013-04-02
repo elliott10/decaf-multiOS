@@ -23,6 +23,9 @@
  */
 #include "qemu-timer.h"
 #include "shared/DECAF_callback_to_QEMU.h"
+#ifdef CONFIG_TCG_TAINT
+#include "tcg.h"
+#endif /* CONFIG_TCG_TAINT */
 #define DATA_SIZE (1 << SHIFT)
 
 #if DATA_SIZE == 8
@@ -397,7 +400,10 @@ static void glue(glue(slow_st, SUFFIX), MMUSUFFIX)(target_ulong addr,
 }
 
 #endif /* !defined(SOFTMMU_CODE_ACCESS) */
-
+#ifdef CONFIG_TCG_TAINT
+/* Include the "taint" version of these functions */
+#include "softmmu_taint_template.h"
+#endif /* CONFIG_TCG_TAINT */
 #undef READ_ACCESS_TYPE
 #undef SHIFT
 #undef DATA_TYPE

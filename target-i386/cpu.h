@@ -616,7 +616,11 @@ typedef struct {
 typedef struct CPUX86State {
     /* standard registers */
     target_ulong regs[CPU_NB_REGS];
-    target_ulong tempidx; //added for TEMU
+#ifdef CONFIG_TCG_TAINT
+    target_ulong taint_regs[CPU_NB_REGS];
+#endif /* CONFIG_TCG_TAINT */
+    target_ulong tempidx; // AWH - added for DECAF
+    target_ulong tempidx2; // AWH - added for DECAF
     target_ulong eip;
     target_ulong eflags; /* eflags register. During CPU emulation, CC
                         flags and DF are set to zero because they are
@@ -625,6 +629,9 @@ typedef struct CPUX86State {
     /* emulator internal eflags handling */
     target_ulong cc_src;
     target_ulong cc_dst;
+#ifdef CONFIG_TCG_TAINT
+    target_ulong taint_cc_src, taint_cc_dst;
+#endif /* CONFIG_TCG_TAINT */
     uint32_t cc_op;
     int32_t df; /* D flag : 1 if D = 0, -1 if D = 1 */
     uint32_t hflags; /* TB flags, see HF_xxx constants. These flags
@@ -668,6 +675,9 @@ typedef struct CPUX86State {
     XMMReg xmm_t0;
     MMXReg mmx_t0;
     target_ulong cc_tmp; /* temporary for rcr/rcl */
+#ifdef CONFIG_TCG_TAINT
+    target_ulong taint_cc_tmp;
+#endif /* CONFIG_TCG_TAINT */
 
     /* sysenter registers */
     uint32_t sysenter_cs;
