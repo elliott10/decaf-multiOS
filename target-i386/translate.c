@@ -5221,6 +5221,9 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
         }
         break;
     case 0xc9: /* leave */
+#ifdef CONFIG_TCG_TAINT
+	gen_helper_DECAF_taint_patch();
+#endif /* CONFIG_TCG_TAINT*/
         /* XXX: exception not precise (ESP is updated before potential exception) */
         if (CODE64(s)) {
             gen_op_mov_TN_reg(OT_QUAD, 0, R_EBP);
@@ -8230,7 +8233,8 @@ static inline void gen_intermediate_code_internal(CPUState *env,
                 if (bp->pc == pc_ptr &&
                     !((bp->flags & BP_CPU) && (tb->flags & HF_RF_MASK))) {
 #ifdef CONFIG_TCG_TAINT
-                    lj = optimize_taint(search_pc);
+                    if (taint_tracking_enabled)
+                        lj = optimize_taint(search_pc);
 #endif /* CONFIG_TCG_TAINT */
                     gen_debug(dc, pc_ptr - dc->cs_base);
                     break;
@@ -8261,7 +8265,8 @@ static inline void gen_intermediate_code_internal(CPUState *env,
         if (dc->is_jmp)
 #ifdef CONFIG_TCG_TAINT
         {
-            lj = optimize_taint(search_pc);
+            if (taint_tracking_enabled)
+                lj = optimize_taint(search_pc);
             break;
         }
 #else
@@ -8275,7 +8280,8 @@ static inline void gen_intermediate_code_internal(CPUState *env,
         if (dc->tf || dc->singlestep_enabled ||
             (flags & HF_INHIBIT_IRQ_MASK)) {
 #ifdef CONFIG_TCG_TAINT
-            lj = optimize_taint(search_pc);
+            if (taint_tracking_enabled)
+                lj = optimize_taint(search_pc);
 #endif /* CONFIG_TCG_TAINT */
             gen_jmp_im(pc_ptr - dc->cs_base);
             gen_eob(dc);
@@ -8286,7 +8292,8 @@ static inline void gen_intermediate_code_internal(CPUState *env,
             (pc_ptr - pc_start) >= (TARGET_PAGE_SIZE - 32) ||
             num_insns >= max_insns) {
 #ifdef CONFIG_TCG_TAINT
-            lj = optimize_taint(search_pc);
+            if (taint_tracking_enabled)
+                lj = optimize_taint(search_pc);
 #endif /* CONFIG_TCG_TAINT */
             gen_jmp_im(pc_ptr - dc->cs_base);
             gen_eob(dc);
@@ -8294,7 +8301,8 @@ static inline void gen_intermediate_code_internal(CPUState *env,
         }
         if (singlestep) {
 #ifdef CONFIG_TCG_TAINT
-            lj = optimize_taint(search_pc);
+            if (taint_tracking_enabled)
+                lj = optimize_taint(search_pc);
 #endif /* CONFIG_TCG_TAINT */
             gen_jmp_im(pc_ptr - dc->cs_base);
             gen_eob(dc);

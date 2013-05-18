@@ -208,19 +208,17 @@ int taintcheck_chk_hdin(const int size, const int64_t sect_num,
   return 0;
 }
 
-int taintcheck_chk_hdwrite(const uint32_t paddr, const int size,
+int taintcheck_chk_hdwrite(const ram_addr_t paddr,unsigned long vaddr, const int size,
   const int64_t sect_num, const void *s)
 {
 #ifdef CONFIG_TCG_TAINT
-  uint32_t i/*, j, k*/;
-  //tpage_entry_t *entry;
-  //uint32_t taint;
+  uint32_t i;
 
-  if (/* AWH !TEMU_emulation_started ||*/ (paddr & 63))
+  if ((paddr & 63))
     return 0;
+
   for (i = paddr; i < paddr + size; i += 4) {
-    //entry = tpage_table[i >> 6];
-    __taint_ldl_raw(i);
+    __taint_ldl_raw_paddr(i, vaddr+i-paddr);
     //if (cpu_single_env->tempidx) fprintf(stderr, "taintcheck_chk_hdwrite() -> Writing taint 0x%08x to disk\n", cpu_single_env->tempidx);
     taintcheck_taint_disk(sect_num * 8 + (i - paddr) / 64,
                           /*(entry) ? entry->bitmap[((paddr & 63) >> 2)] : 0*/cpu_single_env->tempidx, 0, 4/*size*/,
@@ -230,139 +228,56 @@ int taintcheck_chk_hdwrite(const uint32_t paddr, const int size,
   return 0;
 }
 
-int taintcheck_chk_hdread(const uint32_t paddr, const int size,
-  const int64_t sect_num, const void *s)
-{
+int taintcheck_chk_hdread(const ram_addr_t paddr,unsigned long vaddr, const int size,
+		const int64_t sect_num, const void *s) {
 #ifdef CONFIG_TCG_TAINT
-  uint32_t i/*, j*/;
-  //uint32_t taint;
-  //uint8_t *records;
-#if 0 // AWH
-  if (!TEMU_emulation_started)
-    return 0;
-
-  records = qemu_malloc(64 * temu_plugin->taint_record_size);
-  if (!records)
-    return 0;
-#endif // AWH
-  for (i = paddr; i < paddr + size; i += 4) {
-    cpu_single_env->tempidx =
-        taintcheck_disk_check(sect_num * 8 + (i - paddr) / 64, 0, 4,
-                              /*records,*/ s);
-    // AWH if (!taint)
-      // AWH continue;
-    //if (cpu_single_env->tempidx) fprintf(stderr, "taintcheck_chk_hdread() -> Reading taint 0x%08x from disk\n", cpu_single_env->tempidx);
-#if 0 // AWH
-    taint_memory(i, 64, taint);
-    memcpy(tpage_table[i >> 6]->records, records,
-           64 * temu_plugin->taint_record_size);
-#endif // AWH
-    __taint_stl_raw(i);
-#if 0 // AWH
-    if (!temu_plugin->read_disk_taint)
-      continue;
-
-    for (j = 0; j < 64; j++) {
-      if (taint & (1ULL << j))
-        temu_plugin->read_disk_taint(sect_num * 512 + (i - paddr) + j,
-                                     records +
-                                     temu_plugin->taint_record_size * j,
-                                     s);
-    }
-#endif // AWH
-  }
-  // AWH qemu_free(records);
+	unsigned long i;
+	for (i = paddr; i < paddr + size; i += 4) {
+		cpu_single_env->tempidx = taintcheck_disk_check(
+				sect_num * 8 + (i - paddr) / 64, 0, 4, s);
+		__taint_stl_raw_paddr(i, vaddr+i-paddr);
+	}
 #endif /* CONFIG_TCG_TAINT */
-  return 0;
-}
-#ifdef CONFIG_TCG_TAINT
-static uint64_t taint_memory_check(uint32_t middle_node_index,uint32_t leaf_node_index,uint32_t addr,int size)
-{
-	tbitpage_leaf_t *leaf_node = NULL;
-	uint64_t taint=0;
-	int i=0;
-	if (taint_memory_page_table[middle_node_index])
-	leaf_node = taint_memory_page_table[middle_node_index]->leaf[leaf_node_index];
-	else
 	return 0;
+}
 
-	if (leaf_node) {
-		for(i=0;i<size;i++)
-		{
-			if((*(uint8_t *)(leaf_node->bitmap + (addr & LEAF_ADDRESS_MASK)+i))!=0)
-			{
-				taint|=1<<i;
-			}
+#ifdef CONFIG_TCG_TAINT
+
+//
+//the size should be less or equal to 8
+//Return: the bit wise  taint status of memory (vaddr,vaddr+size)
+//the mapping between return value and memory is:
+//Return bytes : 7,6,5,4,3,2,1,0 
+//Mem:          vaddr,vaddr+1,...vaddr+size
+//be carefull when check the taint status of specified byte in memory
+int  taintcheck_check_virtmem(uint32_t vaddr, uint32_t size, uint8_t * taint)
+{
+	uint32_t paddr = 0, offset;
+	uint32_t size1, size2;
+	// uint8_t taint=0;
+	CPUState *env;
+	env = cpu_single_env ? cpu_single_env : first_cpu;
+
+	paddr = DECAF_get_phys_addr(env,vaddr);
+	if(paddr == -1) return 0;
+	offset = vaddr& ~TARGET_PAGE_MASK;
+	if(offset+size > TARGET_PAGE_SIZE) {
+		size1 = TARGET_PAGE_SIZE-offset;
+		size2 = size -size1;
+	} else
+		size1 = size, size2 = 0;
+
+	taint_mem_check(paddr, size1, taint);
+	if(size2) {
+		paddr = DECAF_get_phys_addr(env, (vaddr&TARGET_PAGE_MASK) + TARGET_PAGE_SIZE);
+		if(paddr != -1){
+			// taint<<size2*8;
+			//  taint|=taint_mem_check(paddr,size2)>>(8-size2)*8;
+			taint_mem_check(paddr, size2, (uint8_t*)(taint+size1));
 		}
 	}
-	else return 0;
 
-	return taint;
-}
-
-uint64_t taintcheck_memory_check(uint32_t addr, int size)
-{
-
-	unsigned int middle_node_index,middle_node_index_temp;
-	unsigned int leaf_node_index,leaf_node_index_temp;
-	unsigned int size1=0;
-	tbitpage_leaf_t *leaf_node = NULL;
-	uint64_t taint=0;
-	uint64_t taint1=0;
-	uint64_t taint2=0;
-
-	middle_node_index = addr >> (BITPAGE_LEAF_BITS + BITPAGE_MIDDLE_BITS);
-	leaf_node_index = (addr >> BITPAGE_LEAF_BITS) & MIDDLE_ADDRESS_MASK;
-	middle_node_index_temp = (addr+size-1) >> (BITPAGE_LEAF_BITS + BITPAGE_MIDDLE_BITS);
-	leaf_node_index_temp = ((addr+size-1) >> BITPAGE_LEAF_BITS) & MIDDLE_ADDRESS_MASK;
-	if(middle_node_index==middle_node_index_temp && leaf_node_index==leaf_node_index_temp)
-	{
-		goto Done;
-	} else if(middle_node_index!=middle_node_index_temp)
-	{
-		size1=1<<(BITPAGE_LEAF_BITS + BITPAGE_MIDDLE_BITS)-addr&(1<<(BITPAGE_LEAF_BITS + BITPAGE_MIDDLE_BITS)-1);
-	} else if(leaf_node_index!=leaf_node_index_temp)
-	{
-		size1=(1<<BITPAGE_LEAF_BITS) & MIDDLE_ADDRESS_MASK-addr&(((1<<BITPAGE_LEAF_BITS) & MIDDLE_ADDRESS_MASK)-1);
-	}
-	Done:
-	if(size1)
-	{
-		taint1=taint_memory_check(middle_node_index,leaf_node_index,addr,size1);
-	}
-	taint2=taint_memory_check(middle_node_index_temp,leaf_node_index_temp,addr,size-size1);
-	taint=taint1|(taint2<<size1);
-	return taint;
-}
-
-
-
-
-uint64_t taintcheck_check_virtmem(uint32_t vaddr, uint32_t size)
-{
-  uint64_t ret  = 0;
-  uint32_t paddr = 0, offset;
-  uint32_t size1, size2;
-  CPUState *env;
-  env = cpu_single_env ? cpu_single_env : first_cpu;
-
-  paddr = DECAF_get_phys_addr(env,vaddr);
-  if(paddr == -1) return 0;
-  offset = vaddr& ~TARGET_PAGE_MASK;
-  if(offset+size > TARGET_PAGE_SIZE) {
-        size1 = TARGET_PAGE_SIZE-offset;
-        size2 = size -size1;
-  } else
-        size1 = size, size2 = 0;
-
-  ret = taintcheck_memory_check(paddr, size1);
-  if(size2) {
-        paddr = DECAF_get_phys_addr(env,(vaddr&TARGET_PAGE_MASK)+TARGET_PAGE_SIZE);
-        if(paddr != -1)
-          ret |= taintcheck_memory_check(paddr,size2)<<size1;
-  }
-
-  return ret;
+	return 1;
 }
 
 
@@ -381,17 +296,4 @@ void taintcheck_nic_cleanbuf(const uint32_t addr, const int size)
 	memset(&nic_bitmap[addr], 0, size);
 }
 
-#if 0
-void taintcheck_nic_out(const uint32_t addr, const int size)
-{
-  taintcheck_nic_writebuf(addr, size, (uint8_t *)&cpu_single_env->tempidx);
-  return 0;
-}
-
-int taintcheck_nic_in(const uint32_t addr, const int size)
-{
-	taintcheck_nic_readbuf(addr, size, (uint8_t *)&cpu_single_env->tempidx);
-  return 0;
-}
-#endif
 #endif //CONFIG_TCG_TAINT

@@ -35,6 +35,11 @@
 #include "tainting/taint_memory.h"
 #include "tainting/taintcheck_opt.h"
 #endif /* CONFIG_TCG_TAINT */
+
+#ifdef CONFIG_VMI_ENABLE
+#include "shared/vmi_include.h"
+#endif
+
 plugin_interface_t *decaf_plugin = NULL;
 static void *plugin_handle = NULL;
 static char decaf_plugin_path[PATH_MAX] = "";
@@ -76,8 +81,9 @@ gpa_t DECAF_get_phys_addr(CPUState* env, gva_t addr) {
 		}
 	}
 
-	void *p =
-			(void *) ((addr & TARGET_PAGE_MASK)+ env->tlb_table[mmu_idx][index].addend);
+	void *p = (void *) (addr+ env->tlb_table[mmu_idx][index].addend);
+
+//			(void *) ((addr & TARGET_PAGE_MASK)+ env->tlb_table[mmu_idx][index].addend);
 	return (gpa_t) qemu_ram_addr_from_host_nofail(p);
 }
 
@@ -476,6 +482,7 @@ static int DECAF_load(QEMUFile * f, void *opaque, int version_id) {
 extern void tainting_init(void);
 extern void function_map_init(void);
 extern void DECAF_callback_init(void);
+extern void vmi_init(void);
 
 void DECAF_init(void) {
 	DECAF_callback_init();
@@ -491,6 +498,9 @@ void DECAF_init(void) {
 	function_map_init();
 	init_hookapi();
 	procmod_init();
+	#ifdef CONFIG_VMI_ENABLE
+	vmi_init();
+	#endif
 }
 
 /*
@@ -504,9 +514,11 @@ static void DECAF_virtdev_write_data(void *opaque, uint32_t addr, uint32_t val) 
 		pos = GUEST_MESSAGE_LEN - 2;
 
 	if ((syslogline[pos++] = (char) val) == 0) {
+#ifndef CONFIG_VMI_ENABLE
 		handle_guest_message(syslogline);
 		fprintf(guestlog, "%s", syslogline);
 		fflush(guestlog);
+#endif
 		pos = 0;
 	}
 }

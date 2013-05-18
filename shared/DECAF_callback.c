@@ -436,19 +436,17 @@ DECAF_Handle DECAF_register_callback(
   cb_struct->callback = cb_func;
   cb_struct->enabled = cb_cond;
 
-//#ifdef COMPONENT_VMI
+#ifdef CONFIG_VMI_ENABLE
   if(cb_type == DECAF_TLB_EXEC_CB)
-	  goto done; //Should not flush for tlb callbacks since they don't go into tb.
-//#endif
+	  goto insert_callback; //Should not flush for tlb callbacks since they don't go into tb.
+#endif
 
   if(LIST_EMPTY(&callback_list_heads[cb_type]))
     DECAF_flushTranslationCache();
-
+#ifdef CONFIG_VMI_ENABLE
+insert_callback:
+#endif
   LIST_INSERT_HEAD(&callback_list_heads[cb_type], cb_struct, link);
-
-//#ifdef COMPONENT_VMI
-done:
-//#endif
   return (DECAF_Handle)cb_struct;
 }
 
@@ -604,10 +602,10 @@ int DECAF_unregister_callback(DECAF_callback_type_t cb_type, DECAF_Handle handle
     LIST_REMOVE(cb_struct, link);
     free(cb_struct);
 
-//#ifdef COMPONENT_VMI
+#ifdef CONFIG_VMI_ENABLE
     if(cb_type == DECAF_TLB_EXEC_CB)
     	goto done;
-//#endif
+#endif
 
     //Aravind - If going from non-empty to empty. Flush needed
     if(LIST_EMPTY(&callback_list_heads[cb_type]))
@@ -615,16 +613,16 @@ int DECAF_unregister_callback(DECAF_callback_type_t cb_type, DECAF_Handle handle
       DECAF_flushTranslationCache();
     }
 
-//#ifdef COMPONENT_VMI
+#ifdef CONFIG_VMI_ENABLE
 done:
-//#endif
+#endif
     return 0;
   }
 
   return -1;
 }
 
-//#ifdef COMPONENT_VMI
+#ifdef CONFIG_VMI_ENABLE
 void DECAF_invoke_tlb_exec_callback(CPUState *env, gva_t vaddr)
 {
 	  callback_struct_t *cb_struct;
@@ -641,7 +639,7 @@ void DECAF_invoke_tlb_exec_callback(CPUState *env, gva_t vaddr)
 		  }
 	  }
 }
-//#endif
+#endif
 
 void helper_DECAF_invoke_block_begin_callback(CPUState* env, TranslationBlock* tb)
 {
@@ -787,8 +785,8 @@ void helper_DECAF_invoke_mem_read_callback(gva_t virt_addr,gpa_t phy_addr,DATA_T
 	callback_struct_t *cb_struct;
 	DECAF_Callback_Params params;
 	params.mr.dt=data_type;
-	params.mr.phy_addr=phy_addr;
-	params.mr.virt_addr=virt_addr;
+	params.mr.paddr=phy_addr;
+	params.mr.vaddr=virt_addr;
 
 	//if (cpu_single_env == 0) return;
 
@@ -847,8 +845,8 @@ void helper_DECAF_invoke_mem_write_callback(gva_t virt_addr,gpa_t phy_addr,DATA_
 	callback_struct_t *cb_struct;
 	DECAF_Callback_Params params;
 	params.mw.dt=data_type;
-	params.mw.phy_addr=phy_addr;
-	params.mw.virt_addr=virt_addr;
+	params.mw.paddr=phy_addr;
+	params.mw.vaddr=virt_addr;
 
 	//if (cpu_single_env == 0) return;
 
@@ -899,7 +897,42 @@ void helper_DECAF_invoke_nic_send_callback(uint32_t addr,int size,uint8_t *buf)
 			cb_struct->callback(&params);
 	}
 }
+void helper_DECAF_invoke_read_taint_mem(gva_t vaddr,gpa_t paddr,uint32_t size,uint8_t *taint_info)
+{
+	callback_struct_t *cb_struct;
+	DECAF_Callback_Params params;
+	params.rt.paddr = paddr;
+	params.rt.vaddr = vaddr;
+	params.rt.size = size;
+	params.rt.taint_info = taint_info;
 
+	//FIXME: not thread safe
+	LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_READ_TAINTMEM_CB], link)
+	{
+		// If it is a global callback or it is within the execution context,
+		// invoke this callback
+		if (!cb_struct->enabled || *cb_struct->enabled)
+			cb_struct->callback(&params);
+	}
+}
+void helper_DECAF_invoke_write_taint_mem(gva_t vaddr,gpa_t paddr,uint32_t size,uint8_t *taint_info)
+{
+	callback_struct_t *cb_struct;
+	DECAF_Callback_Params params;
+	params.wt.paddr = paddr;
+	params.wt.vaddr = vaddr;
+	params.wt.size = size;
+	params.wt.taint_info = taint_info;
+
+	//FIXME: not thread safe
+	LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_WRITE_TAINTMEM_CB], link)
+	{
+		// If it is a global callback or it is within the execution context,
+		// invoke this callback
+		if (!cb_struct->enabled || *cb_struct->enabled)
+			cb_struct->callback(&params);
+	}
+}
 void DECAF_callback_init(void)
 {
   int i;

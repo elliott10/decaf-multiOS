@@ -108,6 +108,8 @@ target_list=""
 # Distributions want to ensure that several features are compiled in, and it
 # is impossible without a --enable-foo that exits if a feature is not found.
 
+#AWH - VMI enabled by default
+enable_vmi="yes"
 #AWH - TCG tainting off by default
 tcg_taint="no"
 bluez=""
@@ -803,6 +805,11 @@ for opt do
   ;;
   --disable-tcg-taint) tcg_taint="no"
   ;;
+  # AWH - VMI support
+  --enable-vmi) enable_vmi="yes"
+  ;;
+  --disable-vmi) enable_vmi="no"
+  ;;
   *) echo "ERROR: unknown option $opt"; show_help="yes"
   ;;
   esac
@@ -1098,6 +1105,9 @@ echo "  --enable-guest-agent     enable building of the QEMU Guest Agent"
 # AWH - TCG tainting
 echo "  --disable-tcg-taint      disable taint IR generation via TCG (default)"
 echo "  --enable-tcg-taint       enable taint IR generation via TCG"
+# AWH - VMI enable
+echo "  --disable-vmi            disable VMI support"
+echo "  --enable-vmi             enable VMI support (default)"
 echo ""
 echo "NOTE: The object files are built at the place where configure is launched"
 exit 1
@@ -2897,6 +2907,8 @@ echo "libiscsi support  $libiscsi"
 echo "build guest agent $guest_agent"
 # AWH - TCG tainting
 echo "enable TCG taint  $tcg_taint"
+# AWH - VMI
+echo "enable VMI        $enable_vmi"
 
 if test "$sdl_too_old" = "yes"; then
 echo "-> Your SDL version is too old - please upgrade to have SDL support"
@@ -2938,6 +2950,11 @@ case "$cpu" in
     fi
   ;;
 esac
+
+#AWH - VMI enable
+if test "$enable_vmi" = "yes" ; then
+  echo "CONFIG_VMI_ENABLE=y" >> $config_host_mak
+fi
 
 #AWH - TCG tainting
 if test "$tcg_taint" = "yes" ; then
@@ -3402,6 +3419,7 @@ mkdir -p $target_dir/shared
 mkdir -p $target_dir/shared/hooks
 mkdir -p $target_dir/shared/utils
 mkdir -p $target_dir/shared/tainting
+mkdir -p $target_dir/shared/sqlite3
 
 if test "$target" = "arm-linux-user" -o "$target" = "armeb-linux-user" -o "$target" = "arm-bsd-user" -o "$target" = "armeb-bsd-user" ; then
   mkdir -p $target_dir/nwfpe

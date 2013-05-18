@@ -37,9 +37,9 @@ int DECAF_is_BlockBeginCallback_needed(gva_t pc);
 int DECAF_is_BlockEndCallback_needed(gva_t from, gva_t to);
 
 //This is needed since tlb_exec_cb doesn't go into tb and therefore not in helper.h
-//#ifdef COMPONENT_VMI
+#ifdef CONFIG_VMI_ENABLE
 void DECAF_invoke_tlb_exec_callback(CPUState *env, gva_t vaddr);
-//#endif
+#endif
 
 //The following prototypes are not needed since they are defined in
 // helper.h

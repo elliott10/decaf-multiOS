@@ -26,7 +26,7 @@
 
 //#include "test_tlb_cb.h"
 
-#ifdef COMPONENT_VMI
+#ifdef CONFIG_VMI_ENABLE
 #include "shared/DECAF_callback_to_QEMU.h"
 #endif
 
@@ -2333,7 +2333,7 @@ void tlb_set_page(CPUState *env, target_ulong vaddr,
 
     if (prot & PAGE_EXEC) {
         te->addr_code = code_address;
-#ifdef COMPONENT_VMI
+#ifdef CONFIG_VMI_ENABLE
         if (DECAF_is_callback_needed(DECAF_TLB_EXEC_CB))
         	DECAF_invoke_tlb_exec_callback(env, vaddr);
 #endif

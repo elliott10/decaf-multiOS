@@ -238,7 +238,13 @@ int procmod_createproc(uint32_t pid, uint32_t parent_pid,
   params.cp.cr3 = cr3;
 
   SimpleCallback_dispatch(&procmod_callbacks[PROCMOD_CREATEPROC_CB], &params);
-
+	
+  if(strlen(name)) { //TEST ONLY!! -Heng
+      params.lmm.pid = pid;
+      params.lmm.cr3 = cr3;
+      params.lmm.name = name;
+      SimpleCallback_dispatch(&procmod_callbacks[PROCMOD_LOADMAINMODULE_CB], &params);
+  } 
   //LOK: Replaced it with dispatch
   //if (createproc_notify)
 //	createproc_notify(pid, cr3);
@@ -835,8 +841,10 @@ void parse_process(const char *log)
 	char c;
 	uint32_t pid;
 	uint32_t parent_pid = -1;
+	uint32_t cr3;
+	char name[16];
 
-	if (sscanf(log, "P %c %d %d", &c, &pid, &parent_pid) < 2) {
+	if (sscanf(log, "P %c %d %d %08x %s", &c, &pid, &parent_pid, &cr3, &name) < 2) {
 		return;
 	}
 	switch (c) {
@@ -844,7 +852,12 @@ void parse_process(const char *log)
 		procmod_removeproc(pid);
 		break;
 	case '+':
+#ifdef CONFIG_VMI_ENABLE
+		procmod_createproc(pid, parent_pid, cr3, name);
+#endif
+#ifndef CONFIG_VMI_ENABLE
 		procmod_createproc(pid, parent_pid, -1, "");
+#endif
 		break;
 	}
 }

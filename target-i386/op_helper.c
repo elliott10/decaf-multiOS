@@ -27,6 +27,9 @@
 #include "cpu-defs.h"
 #include "helper.h"
 
+#ifdef CONFIG_TCG_TAINT
+#include "../shared/tainting/taintcheck_opt.h"
+#endif /* CONFIG_TCG_TAINT */
 #if !defined(CONFIG_USER_ONLY)
 #include "softmmu_exec.h"
 #endif /* !defined(CONFIG_USER_ONLY) */
@@ -5931,3 +5934,35 @@ void helper_insn_cb_dispatch(uint32_t eip, uint32_t next_eip, uint32_t op2)
 	}
 }
 //end - Aravind
+
+#ifdef CONFIG_TCG_TAINT
+
+/*
+  patch for keystroke propagation on windows xp sp2 and sp3
+*/
+void helper_DECAF_taint_patch(void) {
+	if (cpu_single_env->eip != 0xbf8a4bde && cpu_single_env->eip != 0xbf84a74f
+			&& cpu_single_env->eip != 0xbf848d65 &&  //for sp3
+			cpu_single_env->eip != 0xbf848d1c) // updated sp3
+		return 0;
+
+	uint32_t phys_addr, addr, addr2, phys_addr2;
+	uint8_t taint, taint_check;
+	addr = cpu_single_env->regs[R_EBP] + 8;
+	phys_addr = DECAF_get_phys_addr(cpu_single_env, addr);
+	if (phys_addr == -1)
+		return 0;
+
+	taint_mem_check(phys_addr, 1, &taint_check);
+	if (!taint_check)
+		return 0;
+
+	addr2 = cpu_single_env->regs[R_EBP] + 0x14;
+
+	if (DECAF_read_mem(cpu_single_env, addr2, 4, &addr2) >= 0 && (phys_addr2 =
+			DECAF_get_phys_addr(cpu_single_env, addr2)) != -1) {
+		taint_mem(phys_addr2, 1, &taint);
+	}
+}
+
+#endif /* CONFIG_TCG_TAINT */ 

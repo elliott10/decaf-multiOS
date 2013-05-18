@@ -1,3 +1,4 @@
+
 /*
 Copyright (C) <2012> <Syracuse System Security (Sycure) Lab>
 
@@ -12,13 +13,15 @@ http://sycurelab.ecs.syr.edu/
 
 If you have any questions about DECAF,please post it on
 http://code.google.com/p/decaf-platform/
-*/
-/*
+
+
  * windows_vmi.h
  *
  *  Created on: Aug 1, 2012
  *      Author: haoru
  */
+
+//#ifdef CONFIG_VMI_ENABLE
 
 #ifndef WINDOWS_VMI_H_
 #define WINDOWS_VMI_H_
@@ -34,13 +37,14 @@ http://code.google.com/p/decaf-platform/
 #include <sys/time.h>
 #include <math.h>
 #include <glib.h>
-//#include "TEMU_main.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
 #include "helper.h"
 #include "cpu.h"
 #include "config.h"
+#include "DECAF_callback_common.h" // AWH
+
 #define MAX_NAME_LENGTH 64
 #define MAX_UNICODE_LENGTH 2*MAX_NAME_LENGTH
 
@@ -94,18 +98,8 @@ extern "C" {
 #define IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT 13
 #define IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR 14
 
-static void update_loaded_kernel_modulelist();
-static int update_active_processlist();
-static void update_active_threadlist();
-static void update_opened_filelist();
-static void update_symbolslist();
 
 int clear_list(int type);
-
-
-int update_api_with_base(uint32_t cr3, uint32_t base, uint32_t spaceType);
-int find_cr3_inlist(uint32_t cr3);
-void tlb_call_back(CPUState *env, target_ulong vaddr);
 
 typedef struct _IMAGE_FILE_HEADER {
   WORD  Machine;
@@ -217,9 +211,6 @@ typedef struct _IMAGE_EXPORT_DIRECTORY
 	DWORD AddressOfNameOrdinals;  // RVA from base of image
 }IMAGE_EXPORT_DIRECTORY, *PIMAGE_EXPORT_DIRECTORY;
 
-/* Plugin interface */
-//static plugin_interface_t recon_interface;
-
 typedef enum {
 	WINXP_SP2 = 0, WINXP_SP3, WIN7_SP0, WIN7_SP1
 } GUEST_OS;
@@ -231,12 +222,12 @@ typedef enum{
 	WmiGuid, EtwRegistration, EtwConsumer, FilterConnectionPort, FilterCommunicationPort, PcwObject
 }W7TYPE_TABLE;
 
-
 struct api_entry{
 	char name[64];
 	uint32_t base;
 	QLIST_ENTRY (api_entry) loadedlist_entry;
 };
+
 struct pe_entry{
 	char name[64];
 	char fullname[128];
@@ -299,7 +290,6 @@ typedef struct {
 	uint32_t DLLBASE_OFFSET;
 	uint32_t SIZE_OFFSET;
 	uint32_t DLLNAME_OFFSET;
-
 	uint32_t PSAPL_OFFSET; // base on struct _EPROCESS
 	uint32_t PSAPID_OFFSET;
 	uint32_t PSAPNAME_OFFSET;
@@ -308,14 +298,11 @@ typedef struct {
 	uint32_t PSAPHANDLES_OFFSET;
 	uint32_t HANDLE_COUNT_OFFSET;
 	uint32_t THREADLH_OFFSET;
-	//uint32_t NAMESIZE;
 	uint32_t THREADCID_OFFSET;
 	uint32_t THREADENTRY_OFFSET;
 	uint32_t TRAPFRAME_OFFSET;
 	uint32_t PEXIT_TIME;
 }off_set;
-
-
 
 typedef struct os_handle {
 	GUEST_OS os_info;
@@ -328,15 +315,17 @@ typedef struct os_handle {
 } os_handle;
 
 
-
 int find_win7sp0(CPUState *env,uintptr_t insn_handle);
 int find_win7sp1(CPUState *env,uintptr_t insn_handle);
 int find_winxpsp2(CPUState *env,uintptr_t insn_handle);
 int find_winxpsp3(CPUState *env,uintptr_t insn_handle);
-void init();
+void win_vmi_init();
 void check_procexit(void *);
-void tlb_call_back(CPUState *env,target_ulong vaddr);
+void tlb_call_back(DECAF_Callback_Params *temp);
 #ifdef __cplusplus
 };
 #endif
 #endif /* RECON_H_ */
+
+//#endif /*CONFIG_VMI_ENABLE*/
+
