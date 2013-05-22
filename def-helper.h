@@ -123,6 +123,18 @@
     DEF_HELPER_FLAGS_5(name, 0, ret, t1, t2, t3, t4, t5)
 #define DEF_HELPER_6(name, ret, t1, t2, t3, t4, t5, t6) \
     DEF_HELPER_FLAGS_6(name, 0, ret, t1, t2, t3, t4, t5, t6)
+#define DEF_HELPER_7(name, ret, t1, t2, t3, t4, t5, t6, t7) \
+    DEF_HELPER_FLAGS_7(name, 0, ret, t1, t2, t3, t4, t5, t6, t7)
+#define DEF_HELPER_8(name, ret, t1, t2, t3, t4, t5, t6, t7, t8) \
+    DEF_HELPER_FLAGS_8(name, 0, ret, t1, t2, t3, t4, t5, t6, t7, t8)
+#define DEF_HELPER_9(name, ret, t1, t2, t3, t4, t5, t6, t7, t8, t9) \
+    DEF_HELPER_FLAGS_9(name, 0, ret, t1, t2, t3, t4, t5, t6, t7, t8, t9)
+#define DEF_HELPER_10(name, ret, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10) \
+    DEF_HELPER_FLAGS_10(name, 0, ret, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10)
+#define DEF_HELPER_11(name, ret, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11) \
+    DEF_HELPER_FLAGS_11(name, 0, ret, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11)
+#define DEF_HELPER_12(name, ret, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12) \
+    DEF_HELPER_FLAGS_12(name, 0, ret, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12)
 #endif /* CONFIG_TCG_TAINT */
 #endif /* DEF_HELPER_H */
 
@@ -153,6 +165,34 @@ dh_ctype(ret) HELPER(name) (dh_ctype(t1), dh_ctype(t2), dh_ctype(t3), \
 #define DEF_HELPER_FLAGS_6(name, flags, ret, t1, t2, t3, t4, t5, t6) \
 dh_ctype(ret) HELPER(name) (dh_ctype(t1), dh_ctype(t2), dh_ctype(t3), \
                              dh_ctype(t4), dh_ctype(t5), dh_ctype(t6));
+
+#define DEF_HELPER_FLAGS_7(name, flags, ret, t1, t2, t3, t4, t5, t6, t7) \
+dh_ctype(ret) HELPER(name) (dh_ctype(t1), dh_ctype(t2), dh_ctype(t3), \
+dh_ctype(t4), dh_ctype(t5), dh_ctype(t6), dh_ctype(t7));
+
+#define DEF_HELPER_FLAGS_8(name, flags, ret, t1, t2, t3, t4, t5, t6, t7, t8) \
+dh_ctype(ret) HELPER(name) (dh_ctype(t1), dh_ctype(t2), dh_ctype(t3), \
+dh_ctype(t4), dh_ctype(t5), dh_ctype(t6), dh_ctype(t7), dh_ctype(t8));
+
+#define DEF_HELPER_FLAGS_9(name, flags, ret, t1, t2, t3, t4, t5, t6, t7, t8, t9) \
+dh_ctype(ret) HELPER(name) (dh_ctype(t1), dh_ctype(t2), dh_ctype(t3), \
+dh_ctype(t4), dh_ctype(t5), dh_ctype(t6), dh_ctype(t7), dh_ctype(t8), \
+dh_ctype(t9));
+
+#define DEF_HELPER_FLAGS_10(name, flags, ret, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10) \
+dh_ctype(ret) HELPER(name) (dh_ctype(t1), dh_ctype(t2), dh_ctype(t3), \
+dh_ctype(t4), dh_ctype(t5), dh_ctype(t6), dh_ctype(t7), dh_ctype(t8), \
+dh_ctype(t9), dh_ctype(t10));
+
+#define DEF_HELPER_FLAGS_11(name, flags, ret, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11) \
+dh_ctype(ret) HELPER(name) (dh_ctype(t1), dh_ctype(t2), dh_ctype(t3), \
+dh_ctype(t4), dh_ctype(t5), dh_ctype(t6), dh_ctype(t7), dh_ctype(t8), \
+dh_ctype(t9), dh_ctype(t10), dh_ctype(t11));
+
+#define DEF_HELPER_FLAGS_12(name, flags, ret, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12) \
+dh_ctype(ret) HELPER(name) (dh_ctype(t1), dh_ctype(t2), dh_ctype(t3), \
+dh_ctype(t4), dh_ctype(t5), dh_ctype(t6), dh_ctype(t7), dh_ctype(t8), \
+dh_ctype(t9), dh_ctype(t10), dh_ctype(t11), dh_ctype(t12));
 #endif /* CONFIG_TCG_TAINT */
 
 #undef GEN_HELPER
@@ -247,6 +287,118 @@ static inline void glue(gen_helper_, name)(dh_retvar_decl(ret) dh_arg_decl(t1, 1
   dh_arg(t6, 6); \
   tcg_gen_helperN(HELPER(name), flags, sizemask, dh_retvar(ret), 6, args); \
 }
+
+#define DEF_HELPER_FLAGS_7(name, flags, ret, t1, t2, t3, t4, t5, t6, t7) \
+static inline void glue(gen_helper_, name)(dh_retvar_decl(ret) dh_arg_decl(t1, 1), dh_arg_decl(t2, 2), dh_arg_decl(t3, 3), dh_arg_decl(t4, 4), dh_arg_decl(t5, 5), dh_arg_decl(t6, 6), dh_arg_decl(t7,7)) \
+{ \
+  TCGArg args[7]; \
+  int sizemask = 0; \
+  dh_sizemask(ret, 0); \
+  dh_arg(t1, 1); \
+  dh_arg(t2, 2); \
+  dh_arg(t3, 3); \
+  dh_arg(t4, 4); \
+  dh_arg(t5, 5); \
+  dh_arg(t6, 6); \
+  dh_arg(t7, 7); \
+  tcg_gen_helperN(HELPER(name), flags, sizemask, dh_retvar(ret), 7, args); \
+}
+
+#define DEF_HELPER_FLAGS_8(name, flags, ret, t1, t2, t3, t4, t5, t6, t7, t8) \
+static inline void glue(gen_helper_, name)(dh_retvar_decl(ret) dh_arg_decl(t1, 1), dh_arg_decl(t2, 2), dh_arg_decl(t3, 3), dh_arg_decl(t4, 4), dh_arg_decl(t5, 5), dh_arg_decl(t6, 6), dh_arg_decl(t7, 7), dh_arg_decl(t8, 8)) \
+{ \
+  TCGArg args[8]; \
+  int sizemask = 0; \
+  dh_sizemask(ret, 0); \
+  dh_arg(t1, 1); \
+  dh_arg(t2, 2); \
+  dh_arg(t3, 3); \
+  dh_arg(t4, 4); \
+  dh_arg(t5, 5); \
+  dh_arg(t6, 6); \
+  dh_arg(t7, 7); \
+  dh_arg(t8, 8); \
+  tcg_gen_helperN(HELPER(name), flags, sizemask, dh_retvar(ret), 8, args); \
+}
+
+#define DEF_HELPER_FLAGS_9(name, flags, ret, t1, t2, t3, t4, t5, t6, t7, t8, t9) \
+static inline void glue(gen_helper_, name)(dh_retvar_decl(ret) dh_arg_decl(t1, 1), dh_arg_decl(t2, 2), dh_arg_decl(t3, 3), dh_arg_decl(t4, 4), dh_arg_decl(t5, 5), dh_arg_decl(t6, 6), dh_arg_decl(t7, 7), dh_arg_decl(t8, 8), dh_arg_decl(t9, 9)) \
+{ \
+  TCGArg args[9]; \
+  int sizemask = 0; \
+  dh_sizemask(ret, 0); \
+  dh_arg(t1, 1); \
+  dh_arg(t2, 2); \
+  dh_arg(t3, 3); \
+  dh_arg(t4, 4); \
+  dh_arg(t5, 5); \
+  dh_arg(t6, 6); \
+  dh_arg(t7, 7); \
+  dh_arg(t8, 8); \
+  dh_arg(t9, 9); \
+  tcg_gen_helperN(HELPER(name), flags, sizemask, dh_retvar(ret), 9, args); \
+}
+
+#define DEF_HELPER_FLAGS_10(name, flags, ret, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10) \
+static inline void glue(gen_helper_, name)(dh_retvar_decl(ret) dh_arg_decl(t1, 1), dh_arg_decl(t2, 2), dh_arg_decl(t3, 3), dh_arg_decl(t4, 4), dh_arg_decl(t5, 5), dh_arg_decl(t6, 6), dh_arg_decl(t7, 7), dh_arg_decl(t8, 8), dh_arg_decl(t9, 9), dh_arg_decl(t10, 10)) \
+{ \
+  TCGArg args[10]; \
+  int sizemask = 0; \
+  dh_sizemask(ret, 0); \
+  dh_arg(t1, 1); \
+  dh_arg(t2, 2); \
+  dh_arg(t3, 3); \
+  dh_arg(t4, 4); \
+  dh_arg(t5, 5); \
+  dh_arg(t6, 6); \
+  dh_arg(t7, 7); \
+  dh_arg(t8, 8); \
+  dh_arg(t9, 9); \
+  dh_arg(t10, 10); \
+  tcg_gen_helperN(HELPER(name), flags, sizemask, dh_retvar(ret), 10, args); \
+}
+
+#define DEF_HELPER_FLAGS_11(name, flags, ret, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11) \
+static inline void glue(gen_helper_, name)(dh_retvar_decl(ret) dh_arg_decl(t1, 1), dh_arg_decl(t2, 2), dh_arg_decl(t3, 3), dh_arg_decl(t4, 4), dh_arg_decl(t5, 5), dh_arg_decl(t6, 6), dh_arg_decl(t7, 7), dh_arg_decl(t8, 8), dh_arg_decl(t9, 9), dh_arg_decl(t10, 10), dh_arg_decl(t11, 11)) \
+{ \
+  TCGArg args[11]; \
+  int sizemask = 0; \
+  dh_sizemask(ret, 0); \
+  dh_arg(t1, 1); \
+  dh_arg(t2, 2); \
+  dh_arg(t3, 3); \
+  dh_arg(t4, 4); \
+  dh_arg(t5, 5); \
+  dh_arg(t6, 6); \
+  dh_arg(t7, 7); \
+  dh_arg(t8, 8); \
+  dh_arg(t9, 9); \
+  dh_arg(t10, 10); \
+  dh_arg(t11, 11); \
+  tcg_gen_helperN(HELPER(name), flags, sizemask, dh_retvar(ret), 11, args); \
+}
+
+#define DEF_HELPER_FLAGS_12(name, flags, ret, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12) \
+static inline void glue(gen_helper_, name)(dh_retvar_decl(ret) dh_arg_decl(t1, 1), dh_arg_decl(t2, 2), dh_arg_decl(t3, 3), dh_arg_decl(t4, 4), dh_arg_decl(t5, 5), dh_arg_decl(t6, 6), dh_arg_decl(t7, 7), dh_arg_decl(t8, 8), dh_arg_decl(t9, 9), dh_arg_decl(t10, 10), dh_arg_decl(t11, 11), dh_arg_decl(t12, 12)) \
+{ \
+  TCGArg args[12]; \
+  int sizemask = 0; \
+  dh_sizemask(ret, 0); \
+  dh_arg(t1, 1); \
+  dh_arg(t2, 2); \
+  dh_arg(t3, 3); \
+  dh_arg(t4, 4); \
+  dh_arg(t5, 5); \
+  dh_arg(t6, 6); \
+  dh_arg(t7, 7); \
+  dh_arg(t8, 8); \
+  dh_arg(t9, 9); \
+  dh_arg(t10, 10); \
+  dh_arg(t11, 11); \
+  dh_arg(t12, 12); \
+  tcg_gen_helperN(HELPER(name), flags, sizemask, dh_retvar(ret), 12, args); \
+}
+
 #endif /* CONFIG_TCG_TAINT */
 
 #undef GEN_HELPER
@@ -276,6 +428,25 @@ DEF_HELPER_FLAGS_0(name, flags, ret)
 
 #define DEF_HELPER_FLAGS_6(name, flags, ret, t1, t2, t3, t4, t5, t6) \
 DEF_HELPER_FLAGS_0(name, flags, ret)
+
+#define DEF_HELPER_FLAGS_7(name, flags, ret, t1, t2, t3, t4, t5, t6, t7) \
+DEF_HELPER_FLAGS_0(name, flags, ret)
+
+#define DEF_HELPER_FLAGS_8(name, flags, ret, t1, t2, t3, t4, t5, t6, t7, t8) \
+DEF_HELPER_FLAGS_0(name, flags, ret)
+
+#define DEF_HELPER_FLAGS_9(name, flags, ret, t1, t2, t3, t4, t5, t6, t7, t8, t9) \
+DEF_HELPER_FLAGS_0(name, flags, ret)
+
+#define DEF_HELPER_FLAGS_10(name, flags, ret, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10) \
+DEF_HELPER_FLAGS_0(name, flags, ret)
+
+#define DEF_HELPER_FLAGS_11(name, flags, ret, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11) \
+DEF_HELPER_FLAGS_0(name, flags, ret)
+
+#define DEF_HELPER_FLAGS_12(name, flags, ret, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12) \
+DEF_HELPER_FLAGS_0(name, flags, ret)
+
 #endif /* CONFIG_TCG_TAINT */
 
 #undef GEN_HELPER
@@ -292,6 +463,12 @@ DEF_HELPER_FLAGS_0(name, flags, ret)
 #ifdef CONFIG_TCG_TAINT
 #undef DEF_HELPER_FLAGS_5
 #undef DEF_HELPER_FLAGS_6
+#undef DEF_HELPER_FLAGS_7
+#undef DEF_HELPER_FLAGS_8
+#undef DEF_HELPER_FLAGS_9
+#undef DEF_HELPER_FLAGS_10
+#undef DEF_HELPER_FLAGS_11
+#undef DEF_HELPER_FLAGS_12
 #endif /* CONFIG_TCG_TAINT */
 #undef GEN_HELPER
 
