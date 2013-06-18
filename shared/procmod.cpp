@@ -685,23 +685,25 @@ int checkcr3(uint32_t cr3, uint32_t eip, uint32_t tracepid, char *name,
 
 uint32_t get_current_tid(CPUState* env)
 {
-    uint32_t val;
-    uint32_t tid;
+#ifdef TARGET_I386
+	uint32_t val;
+	uint32_t tid;
 
-    //This may only work with Windows XP
+	//This may only work with Windows XP
 
-    if (!is_guest_windows())
+	if (!is_guest_windows())
+		return -1;
+
+	if (!DECAF_is_in_kernel()) { // user module
+		if (DECAF_read_mem(env, cpu_single_env->segs[R_FS].base + 0x18, 4, &val) != -1
+				&& DECAF_read_mem(env, val + 0x24, 4, &tid) != -1)
+			return tid;
+	} else if (DECAF_read_mem(env, cpu_single_env->segs[R_FS].base + 0x124, 4, &val)
+			!= -1 && DECAF_read_mem(env, val + 0x1F0, 4, &tid) != -1)
+		return tid;
+#endif
+
 	return -1;
-
-    if (!DECAF_is_in_kernel()) {	// user module
-	if (DECAF_read_mem(env, DECAF_cpu_segs[R_FS].base + 0x18, 4, &val) != -1
-	    && DECAF_read_mem(env, val + 0x24, 4, &tid) != -1)
-	    return tid;
-    } else if (DECAF_read_mem(env, DECAF_cpu_segs[R_FS].base + 0x124, 4, &val) !=
-	       -1 && DECAF_read_mem(env, val + 0x1F0, 4, &tid) != -1)
-	return tid;
-
-    return -1;
 }
 
 
@@ -842,9 +844,9 @@ void parse_process(const char *log)
 	uint32_t pid;
 	uint32_t parent_pid = -1;
 	uint32_t cr3;
-	char name[16];
+	char name[16]="";
 
-	if (sscanf(log, "P %c %d %d %08x %s", &c, &pid, &parent_pid, &cr3, &name) < 2) {
+	if (sscanf(log, "P %c %d %d %08x %s", &c, &pid, &parent_pid, &cr3, name) < 2) {
 		return;
 	}
 	switch (c) {
@@ -852,12 +854,11 @@ void parse_process(const char *log)
 		procmod_removeproc(pid);
 		break;
 	case '+':
-#ifdef CONFIG_VMI_ENABLE
-		procmod_createproc(pid, parent_pid, cr3, name);
-#endif
-#ifndef CONFIG_VMI_ENABLE
-		procmod_createproc(pid, parent_pid, -1, "");
-#endif
+		if(strlen(name))
+			procmod_createproc(pid, parent_pid, cr3, name);
+		else
+			procmod_createproc(pid, parent_pid, -1, "");
+
 		break;
 	}
 }
@@ -905,10 +906,14 @@ void parse_module(const char *log)
 
 int is_guest_windows()
 {
+#ifdef TARGET_I386
     //FIXME: we use a very simple hack here. Windows uses FS segment register to store 
     // the current process context, while Linux does not. We may need better heuristics 
     // when we need to support more guest systems.
-    return (DECAF_cpu_segs[R_FS].selector != 0);
+    return (cpu_single_env->segs[R_FS].selector != 0);
+#else
+    return 0;
+#endif
 }
 
 

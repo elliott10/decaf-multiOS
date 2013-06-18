@@ -28,11 +28,10 @@ http://code.google.com/p/decaf-platform/
 // Deprecated
 int DECAF_emulation_started = 0;
 
+#if 0
 /*
  * A virtual device that reads messages from the kernel module in the guest windows
  */
-
-int should_monitor = 1;
 
 target_ulong *DECAF_cpu_regs = NULL;
 target_ulong *DECAF_cpu_eip = NULL;
@@ -55,7 +54,7 @@ uint8_t *DECAF_cpu_fptags = NULL;
 uint32_t *DECAF_cpu_branch_cnt = NULL;	//JMK: added by manju mjayacha@syr.edu to store the branch count value
 int insn_tainted = 0;		//Indicates if the current instruction is tainted
 int plugin_taint_record_size = 0;
-
+#endif
 
 //Aravind - call backs for the instruction handlers
 void (*insn_cbl1[16*16]) (uint32_t eip, uint32_t op); //Used to get l1 callbacks (all opcodes except 0x0f) insn_cbl1[byte1byte2] holds the cb for that opcode
@@ -64,6 +63,7 @@ void (*insn_cbl2[16*16]) (uint32_t eip, uint32_t op); //Used to get l2 callbacks
 
 // AWH extern CPUState *first_cpu;
 
+#if 0
 /*
  * Update CPU States 
  */
@@ -94,6 +94,7 @@ void DECAF_update_cpustate(void)
 	DECAF_cpu_branch_cnt = &cur_env->branch_cnt;
     }
 }
+#endif
 
 #if 0 //TO BE REMOVED
 void DECAF_update_cpl(int cpl)
@@ -112,7 +113,8 @@ void DECAF_update_cpl(int cpl)
 }
 #endif
 
-gpa_t DECAF_get_physaddr_with_cr3(CPUState* env, target_ulong cr3, gva_t addr)
+
+gpa_t DECAF_get_phys_addr_with_pgd(CPUState* env, gpa_t pgd, gva_t addr)
 {
 
   if (env == NULL)
@@ -124,16 +126,17 @@ gpa_t DECAF_get_physaddr_with_cr3(CPUState* env, target_ulong cr3, gva_t addr)
 #endif
   }
 
-
   target_ulong saved_cr3 = env->cr[3];
   uint32_t phys_addr;
 
-  env->cr[3] = cr3;
+  env->cr[3] = pgd;
   phys_addr = cpu_get_phys_page_debug(env, addr & TARGET_PAGE_MASK);
 
   env->cr[3] = saved_cr3;
-  return phys_addr;
+  return (phys_addr | (addr & (~TARGET_PAGE_MASK)));
 }
+
+
 
 #if 0 //TO BE REMOVED -Heng
 void DECAF_do_interrupt(int intno, int is_int, target_ulong next_eip)

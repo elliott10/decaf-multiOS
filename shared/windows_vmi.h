@@ -37,11 +37,14 @@ http://code.google.com/p/decaf-platform/
 #include <sys/time.h>
 #include <math.h>
 #include <glib.h>
+
+#include "vmi.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-#include "helper.h"
-#include "cpu.h"
+//#include "helper.h"
+//#include "cpu.h"
 #include "config.h"
 #include "DECAF_callback_common.h" // AWH
 
@@ -319,9 +322,10 @@ int find_win7sp0(CPUState *env,uintptr_t insn_handle);
 int find_win7sp1(CPUState *env,uintptr_t insn_handle);
 int find_winxpsp2(CPUState *env,uintptr_t insn_handle);
 int find_winxpsp3(CPUState *env,uintptr_t insn_handle);
+
 void win_vmi_init();
-void check_procexit(void *);
-void tlb_call_back(DECAF_Callback_Params *temp);
+
+
 #ifdef __cplusplus
 };
 #endif

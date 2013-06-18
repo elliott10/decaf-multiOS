@@ -127,7 +127,7 @@ extern gpa_t DECAF_get_physaddr_with_cr3(CPUState* env, target_ulong cr3, gva_t 
 
 extern DECAF_errno_t DECAF_memory_rw(CPUState* env, gva_t addr, void *buf, int len, int is_write);
 
-DECAF_errno_t DECAF_memory_rw_with_cr3(CPUState* env, target_ulong cr3, gva_t addr, void *buf,
+DECAF_errno_t DECAF_memory_rw_with_pgd(CPUState* env, target_ulong pgd, gva_t addr, void *buf,
                             int len, int is_write);
 
 /// \brief Read from a memory region by its virtual address.
@@ -152,12 +152,10 @@ extern DECAF_errno_t DECAF_read_mem(CPUState* env, gva_t vaddr, int len, void *b
 /// into physical address. It could be either invalid address or swapped out.
 extern DECAF_errno_t DECAF_write_mem(CPUState* env, gva_t vaddr, int len, void *buf);
 
-//This implementation is NOT target specific because it uses the get phys page cr3 function above
-extern DECAF_errno_t DECAF_read_mem_with_cr3(CPUState* env, target_ulong cr3, gva_t vaddr, int len, void *buf);
-#define DECAF_read_mem_with_pgd(_env, _pgd, _vaddr, _len, _buf) DECAF_read_mem_with_cr3(_pgd, _vaddr, _len, _buf)
 
-extern DECAF_errno_t DECAF_write_mem_with_cr3(CPUState* env, target_ulong cr3, gva_t vaddr, int len, void *buf);
-#define DECAF_write_mem_with_pgd(_env, _pgd, _vaddr, _len, _buf) DECAF_write_mem_with_cr3(_pgd, _vaddr, _len, _buf)
+extern DECAF_errno_t DECAF_read_mem_with_pgd(CPUState* env, target_ulong pgd, gva_t vaddr, int len, void *buf);
+extern DECAF_errno_t DECAF_write_mem_with_pgd(CPUState* env, target_ulong pgd, gva_t vaddr, int len, void *buf);
+
 
 
 extern void * DECAF_KbdState;

@@ -45,7 +45,7 @@ http://code.google.com/p/decaf-platform/
 extern "C" {
 #endif // __cplusplus
 
-extern void DECAF_update_cpustate(void);
+//extern void DECAF_update_cpustate(void);
 
 /** Define Registers ***/
 /* Most are defined in shared/disasm.h */
@@ -148,6 +148,7 @@ extern void DECAF_update_cpustate(void);
 
 
 
+#if 0
 /*
  * These are extracted from CPUX86State
  */
@@ -189,7 +190,7 @@ extern uint8_t * DECAF_cpu_fptags;
 
 extern uint32_t *DECAF_cc_op;
 
-
+#endif
 
 
 
@@ -210,7 +211,7 @@ extern int DECAF_get_page_access(CPUState* env, gva_t addr);
 /// Check if the current execution of guest system is in kernel mode (i.e., ring-0)
 static inline int DECAF_is_in_kernel(void)
 {
-  return ((*DECAF_cpu_hflags & HF_CPL_MASK) == 0);
+  return ((cpu_single_env->hflags & HF_CPL_MASK) == 0);
 }
 
 /// \brief Read from a register.
@@ -223,62 +224,62 @@ static inline int DECAF_is_in_kernel(void)
 static inline void DECAF_read_register(int reg_id, void *buf)
 {
   switch(reg_id) {
-    case eax_reg: *(uint32_t*)buf = DECAF_cpu_regs[R_EAX];
+    case eax_reg: *(uint32_t*)buf = cpu_single_env->regs[R_EAX];
     	break;
-    case ecx_reg: *(uint32_t*)buf = DECAF_cpu_regs[R_ECX];
+    case ecx_reg: *(uint32_t*)buf = cpu_single_env->regs[R_ECX];
     	break;
-    case edx_reg: *(uint32_t*)buf = DECAF_cpu_regs[R_EDX];
+    case edx_reg: *(uint32_t*)buf = cpu_single_env->regs[R_EDX];
     	break;
-    case ebx_reg: *(uint32_t*)buf = DECAF_cpu_regs[R_EBX];
+    case ebx_reg: *(uint32_t*)buf = cpu_single_env->regs[R_EBX];
     	break;
-    case esp_reg: *(uint32_t*)buf = DECAF_cpu_regs[R_ESP];
+    case esp_reg: *(uint32_t*)buf = cpu_single_env->regs[R_ESP];
     	break;
-    case ebp_reg: *(uint32_t*)buf = DECAF_cpu_regs[R_EBP];
+    case ebp_reg: *(uint32_t*)buf = cpu_single_env->regs[R_EBP];
     	break;
-    case esi_reg: *(uint32_t*)buf = DECAF_cpu_regs[R_ESI];
+    case esi_reg: *(uint32_t*)buf = cpu_single_env->regs[R_ESI];
     	break;
-    case edi_reg: *(uint32_t*)buf = DECAF_cpu_regs[R_EDI];
+    case edi_reg: *(uint32_t*)buf = cpu_single_env->regs[R_EDI];
     	break;
 
-    case al_reg: *(uint8_t*)buf = (uint8_t)DECAF_cpu_regs[R_EAX];
+    case al_reg: *(uint8_t*)buf = (uint8_t)cpu_single_env->regs[R_EAX];
 			   break;
-    case cl_reg: *(uint8_t*)buf = (uint8_t)DECAF_cpu_regs[R_ECX];
+    case cl_reg: *(uint8_t*)buf = (uint8_t)cpu_single_env->regs[R_ECX];
 			   break;
-    case dl_reg: *(uint8_t*)buf = (uint8_t)DECAF_cpu_regs[R_EDX];
+    case dl_reg: *(uint8_t*)buf = (uint8_t)cpu_single_env->regs[R_EDX];
 			   break;
-    case bl_reg: *(uint8_t*)buf = (uint8_t)DECAF_cpu_regs[R_EBX];
+    case bl_reg: *(uint8_t*)buf = (uint8_t)cpu_single_env->regs[R_EBX];
 			   break;
-    case ah_reg: *(uint8_t*)buf = *((uint8_t*)(&DECAF_cpu_regs[R_EAX]) + 1);
+    case ah_reg: *(uint8_t*)buf = *((uint8_t*)(&cpu_single_env->regs[R_EAX]) + 1);
 			   break;
-    case ch_reg: *(uint8_t*)buf = *((uint8_t*)(&DECAF_cpu_regs[R_ECX]) + 1);
+    case ch_reg: *(uint8_t*)buf = *((uint8_t*)(&cpu_single_env->regs[R_ECX]) + 1);
 			   break;
-    case dh_reg: *(uint8_t*)buf = *((uint8_t*)(&DECAF_cpu_regs[R_EDX]) + 1);
+    case dh_reg: *(uint8_t*)buf = *((uint8_t*)(&cpu_single_env->regs[R_EDX]) + 1);
 			   break;
-    case bh_reg: *(uint8_t*)buf = *((uint8_t*)(&DECAF_cpu_regs[R_EBX]) + 1);
+    case bh_reg: *(uint8_t*)buf = *((uint8_t*)(&cpu_single_env->regs[R_EBX]) + 1);
 			   break;
        
-    case ax_reg: *(uint16_t*)buf = (uint16_t)DECAF_cpu_regs[R_EAX];
+    case ax_reg: *(uint16_t*)buf = (uint16_t)cpu_single_env->regs[R_EAX];
 			   break;
-    case cx_reg: *(uint16_t*)buf = (uint16_t)DECAF_cpu_regs[R_ECX];
+    case cx_reg: *(uint16_t*)buf = (uint16_t)cpu_single_env->regs[R_ECX];
 			   break;
-    case dx_reg: *(uint16_t*)buf = (uint16_t)DECAF_cpu_regs[R_EDX];
+    case dx_reg: *(uint16_t*)buf = (uint16_t)cpu_single_env->regs[R_EDX];
 			   break;
-    case bx_reg: *(uint16_t*)buf = (uint16_t)DECAF_cpu_regs[R_EBX];
+    case bx_reg: *(uint16_t*)buf = (uint16_t)cpu_single_env->regs[R_EBX];
 			   break;
-    case sp_reg: *(uint16_t*)buf = (uint16_t)DECAF_cpu_regs[R_ESP];
+    case sp_reg: *(uint16_t*)buf = (uint16_t)cpu_single_env->regs[R_ESP];
 			   break;
-    case bp_reg: *(uint16_t*)buf = (uint16_t)DECAF_cpu_regs[R_EBP];
+    case bp_reg: *(uint16_t*)buf = (uint16_t)cpu_single_env->regs[R_EBP];
 			   break;
-    case si_reg: *(uint16_t*)buf = (uint16_t)DECAF_cpu_regs[R_ESI];
+    case si_reg: *(uint16_t*)buf = (uint16_t)cpu_single_env->regs[R_ESI];
 			   break;
-    case di_reg: *(uint16_t*)buf = (uint16_t)DECAF_cpu_regs[R_EDI];
+    case di_reg: *(uint16_t*)buf = (uint16_t)cpu_single_env->regs[R_EDI];
 			   break;
 
     case eip_reg: 
-    		  *(uint32_t *)buf = *DECAF_cpu_eip;
+    		  *(uint32_t *)buf = cpu_single_env->eip;
     		break;
     case cr3_reg: 
-    		*(uint32_t *)buf = DECAF_cpu_cr[3];
+    		*(uint32_t *)buf = cpu_single_env->cr[3];
     		break;
 
     default: 
@@ -296,62 +297,62 @@ static inline void DECAF_read_register(int reg_id, void *buf)
 static inline void DECAF_write_register(int reg_id, void *buf)
 {
   switch(reg_id) {
-    case eax_reg: DECAF_cpu_regs[R_EAX] = *(uint32_t*)buf;
+    case eax_reg: cpu_single_env->regs[R_EAX] = *(uint32_t*)buf;
     	break;
-    case ecx_reg: DECAF_cpu_regs[R_ECX] = *(uint32_t*)buf;
+    case ecx_reg: cpu_single_env->regs[R_ECX] = *(uint32_t*)buf;
     	break;
-    case edx_reg: DECAF_cpu_regs[R_EDX] = *(uint32_t*)buf;
+    case edx_reg: cpu_single_env->regs[R_EDX] = *(uint32_t*)buf;
     	break;
-    case ebx_reg: DECAF_cpu_regs[R_EBX] = *(uint32_t*)buf;
+    case ebx_reg: cpu_single_env->regs[R_EBX] = *(uint32_t*)buf;
     	break;
-    case esp_reg: DECAF_cpu_regs[R_ESP] = *(uint32_t*)buf;
+    case esp_reg: cpu_single_env->regs[R_ESP] = *(uint32_t*)buf;
     	break;
-    case ebp_reg: DECAF_cpu_regs[R_EBP] = *(uint32_t*)buf;
+    case ebp_reg: cpu_single_env->regs[R_EBP] = *(uint32_t*)buf;
     	break;
-    case esi_reg: DECAF_cpu_regs[R_ESI] = *(uint32_t*)buf;
+    case esi_reg: cpu_single_env->regs[R_ESI] = *(uint32_t*)buf;
     	break;
-    case edi_reg: DECAF_cpu_regs[R_EDI] = *(uint32_t*)buf;
+    case edi_reg: cpu_single_env->regs[R_EDI] = *(uint32_t*)buf;
     	break;
 
-    case al_reg: *(uint8_t*)(&DECAF_cpu_regs[R_EAX]) = *(uint8_t*)buf;
+    case al_reg: *(uint8_t*)(&cpu_single_env->regs[R_EAX]) = *(uint8_t*)buf;
 			   break;
-    case cl_reg: *(uint8_t*)(&DECAF_cpu_regs[R_ECX]) = *(uint8_t*)buf;
+    case cl_reg: *(uint8_t*)(&cpu_single_env->regs[R_ECX]) = *(uint8_t*)buf;
 			   break;
-    case dl_reg: *(uint8_t*)(&DECAF_cpu_regs[R_EDX]) = *(uint8_t*)buf;
+    case dl_reg: *(uint8_t*)(&cpu_single_env->regs[R_EDX]) = *(uint8_t*)buf;
 			   break;
-    case bl_reg: *(uint8_t*)(&DECAF_cpu_regs[R_EBX]) = *(uint8_t*)buf;
+    case bl_reg: *(uint8_t*)(&cpu_single_env->regs[R_EBX]) = *(uint8_t*)buf;
 			   break;
-    case ah_reg: *((uint8_t*)(&DECAF_cpu_regs[R_EAX]) + 1) = *(uint8_t*)buf;
+    case ah_reg: *((uint8_t*)(&cpu_single_env->regs[R_EAX]) + 1) = *(uint8_t*)buf;
 			   break;
-    case ch_reg: *((uint8_t*)(&DECAF_cpu_regs[R_ECX]) + 1) = *(uint8_t*)buf;
+    case ch_reg: *((uint8_t*)(&cpu_single_env->regs[R_ECX]) + 1) = *(uint8_t*)buf;
 			   break;
-    case dh_reg: *((uint8_t*)(&DECAF_cpu_regs[R_EDX]) + 1) = *(uint8_t*)buf;
+    case dh_reg: *((uint8_t*)(&cpu_single_env->regs[R_EDX]) + 1) = *(uint8_t*)buf;
 			   break;
-    case bh_reg: *((uint8_t*)(&DECAF_cpu_regs[R_EBX]) + 1) = *(uint8_t*)buf;
+    case bh_reg: *((uint8_t*)(&cpu_single_env->regs[R_EBX]) + 1) = *(uint8_t*)buf;
 			   break;
        
-    case ax_reg: *(uint16_t*)(&DECAF_cpu_regs[R_EAX]) = *(uint16_t*)buf;
+    case ax_reg: *(uint16_t*)(&cpu_single_env->regs[R_EAX]) = *(uint16_t*)buf;
 			   break;
-    case cx_reg: *(uint16_t*)(&DECAF_cpu_regs[R_ECX]) = *(uint16_t*)buf;
+    case cx_reg: *(uint16_t*)(&cpu_single_env->regs[R_ECX]) = *(uint16_t*)buf;
 			   break;
-    case dx_reg: *(uint16_t*)(&DECAF_cpu_regs[R_EDX]) = *(uint16_t*)buf;
+    case dx_reg: *(uint16_t*)(&cpu_single_env->regs[R_EDX]) = *(uint16_t*)buf;
 			   break;
-    case bx_reg: *(uint16_t*)(&DECAF_cpu_regs[R_EBX]) = *(uint16_t*)buf;
+    case bx_reg: *(uint16_t*)(&cpu_single_env->regs[R_EBX]) = *(uint16_t*)buf;
 			   break;
-    case sp_reg: *(uint16_t*)(&DECAF_cpu_regs[R_ESP]) = *(uint16_t*)buf;
+    case sp_reg: *(uint16_t*)(&cpu_single_env->regs[R_ESP]) = *(uint16_t*)buf;
 			   break;
-    case bp_reg: *(uint16_t*)(&DECAF_cpu_regs[R_EBP]) = *(uint16_t*)buf;
+    case bp_reg: *(uint16_t*)(&cpu_single_env->regs[R_EBP]) = *(uint16_t*)buf;
 			   break;
-    case si_reg: *(uint16_t*)(&DECAF_cpu_regs[R_ESI]) = *(uint16_t*)buf;
+    case si_reg: *(uint16_t*)(&cpu_single_env->regs[R_ESI]) = *(uint16_t*)buf;
 			   break;
-    case di_reg: *(uint16_t*)(&DECAF_cpu_regs[R_EDI]) = *(uint16_t*)buf;
+    case di_reg: *(uint16_t*)(&cpu_single_env->regs[R_EDI]) = *(uint16_t*)buf;
 			   break;
 
     case eip_reg: 
-    		*DECAF_cpu_eip = *(uint32_t *)buf;
+    		cpu_single_env->eip = *(uint32_t *)buf;
     		break;
     case cr3_reg: 
-    		DECAF_cpu_cr[3] = *(uint32_t *)buf;
+    		cpu_single_env->cr[3] = *(uint32_t *)buf;
     		break;
 
     default: 
@@ -361,6 +362,23 @@ static inline void DECAF_write_register(int reg_id, void *buf)
 
 /* @} */ //end of group
 
+static inline gva_t DECAF_getPC(CPUState* env)
+{
+  return (env->eip + env->segs[R_CS].base);
+}
+
+static inline gpa_t DECAF_getPGD(CPUState* env)
+{
+  return (env->cr[3]);
+}
+
+static inline gva_t DECAF_getESP(CPUState* env)
+{
+  return (env->regs[R_ESP]);
+}
+
+
+gpa_t DECAF_get_phys_addr_with_pgd(CPUState* env, gpa_t pgd, gva_t addr);
 
 #ifdef __cplusplus
 }

@@ -3,7 +3,7 @@
 #include "shared/tainting/DECAF_taint_helper.h"
 #endif /* CONFIG_TCG_TAINT */
 //Aravind - Generic insn_range_cb_dispatcher
-DEF_HELPER_3(insn_cb_dispatch, void, tl, tl, i32) //insn_cb_dispatch(eip, next_eip, opcode) next_eip used if insn branches
+//DEF_HELPER_3(insn_cb_dispatch, void, tl, tl, i32) //insn_cb_dispatch(eip, next_eip, opcode) next_eip used if insn branches
 //end - Aravind
 
 //DEF_HELPER_1(DECAF_invoke_callback, void, i32)

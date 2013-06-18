@@ -280,10 +280,6 @@ static int default_floppy = 1;
 static int default_cdrom = 1;
 static int default_sdcard = 1;
 
-// AWH - TEMU
-//static char *TEMU_loadvm_args[3];
-extern void TEMU_init(void); // AWH
-
 static struct {
     const char *driver;
     int *flag;
@@ -2160,7 +2156,6 @@ static void free_and_trace(gpointer mem)
     free(mem);
 }
 
-//Aravind - cleanup_insn_cbs() in TEMU_main.c
 extern void DECAF_cleanup_insn_cbs(void);
 extern void do_load_plugin_internal(Monitor* mon, const char* plugin_path); 
 //end - Aravind
@@ -2184,6 +2179,9 @@ int main(int argc, char **argv, char **envp)
     const char *loadvm = NULL;
     const char *after_loadvm = NULL; // AWH
     const char *load_plugin = NULL; // AWH
+#ifdef CONFIG_VMI_ENABLE
+    FILE *vmi_profile_fp = NULL;
+#endif
     QEMUMachine *machine;
     const char *cpu_model;
     const char *pid_file = NULL;
@@ -2209,11 +2207,6 @@ int main(int argc, char **argv, char **envp)
     if (!g_thread_supported()) {
         g_thread_init(NULL);
     }
-
-    //Aravind - reset insn_cbs
-    DECAF_cleanup_insn_cbs();
-    //end - Aravind
-
 
     runstate_init();
 
@@ -3087,12 +3080,28 @@ int main(int argc, char **argv, char **envp)
                     fclose(fp);
                     break;
                 }
+#if 0 //def CONFIG_VMI_ENABLE
+            case QEMU_OPTION_vmi_profile:
+            	vmi_profile_fp = fopen(optarg, "r");
+            	if(vmi_profile_fp == NULL)
+            		fprintf(stderr, "Cannot open %s: %s!\n", strerror(errno));
+
+           		break;
+#endif
+
             default:
                 os_parse_cmd_args(popt->index, optarg);
             }
         }
     }
     loc_set_none();
+
+#if 0
+    if(!vmi_profile_fp) {
+        fprintf(stderr, "A VMI profile must be specified using \"-vmi-profile\" option.\n");
+        exit(1);
+    }
+#endif
 
     /* Open the logfile at this point, if necessary. We can't open the logfile
      * when encountering either of the logging options (-d or -D) because the

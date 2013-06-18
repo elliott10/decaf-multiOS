@@ -17,7 +17,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
-#include "sqlite3/sqlite3.h"
+//#include "sqlite3/sqlite3.h"
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
@@ -31,15 +31,16 @@ extern "C" {
 };
 #endif /* __cplusplus */
 #include "windows_vmi.h"
-// AWH #include "linux_vmi.h"
+#include "linux_vmi.h"
+
 #include "hookapi.h"
 #include "read_linux.h"
 #include "shared/vmi.h"
 #include "shared/DECAF_main.h"
 #include "shared/procmod.h"
-#include "shared/function_map.h" /* AWH "shared/hooks/function_map.h" */
+#include "shared/function_map.h"
 #include "shared/utils/SimpleCallback.h"
-//#include "helper.h"
+
 
 using namespace std;
 using namespace std::tr1;
@@ -56,19 +57,23 @@ static queue< process* > processes;
 // cr3 set
 static unordered_set <uint32_t> cr3s;
 // map cr3 to cr3_info
-static unordered_map <uint32_t,cr3_info_c *> cr3infos;
+//static unordered_map <uint32_t,cr3_info_c *> cr3infos;
 
 uint32_t GuestOS_index_c=11;
 uintptr_t insn_handle_c = 0;
 
 static os_handle_c handle_funds_c[] = {
+#ifdef TARGET_I386
 		{ WINXP_SP2_C, &find_winxpsp2, &win_vmi_init, },
 		{ WINXP_SP3_C, &find_winxpsp3, &win_vmi_init, },
 		{ WIN7_SP0_C, &find_win7sp0, &win_vmi_init, },
 		{ WIN7_SP1_C, &find_win7sp1, &win_vmi_init, },
+#endif
 		//{ LINUX_2_6_C, &find_linux, &linux_vmi_init,},
 };
 
+
+#if 0
 void listProcs(Monitor *mon) {
 	process *proc;
 	unordered_map<uint32_t, process *>::iterator iter;
@@ -97,6 +102,7 @@ void listModuleByPid(Monitor *mon, uint32_t pid) {
 				mod->size);
 	}
 }
+#endif
 
 int addProcV(process *proc){
     if(proc==NULL)
@@ -134,157 +140,9 @@ int get_loaded_modules_countV(uint32_t pid) {
 }
 //end - Aravind
 
-static void extract_dll_info(IMAGE_NT_HEADERS *nth, uint32_t cr3, uint32_t base, module *mod){
-
-	//CPUState *env = cpu_single_env ? cpu_single_env : first_cpu;
-	DWORD checksum = nth->OptionalHeader.CheckSum;
-	DWORD codesize = nth->OptionalHeader.SizeOfCode;
-	WORD major = nth->OptionalHeader.MajorImageVersion;
-	WORD minor = nth->OptionalHeader.MinorImageVersion;
-	mod->checksum = checksum;
-	mod->codesize = codesize;
-	mod->major = major;
-	mod->minor = minor;
-}
-// not used, can't extract dll at runtime
-//static void extract_export_table_from(IMAGE_NT_HEADERS *nth, uint32_t cr3, uint32_t base, module *mod)
-//{
-//	DWORD edt_va,edt_size;
-//	DWORD *func_addrs, *name_addrs;
-//	char name[128] = {0};
-//	char msg[512] = {0};
-//	int i;
-//	IMAGE_EXPORT_DIRECTORY *pedt;
-//	CPUState *env = cpu_single_env ? cpu_single_env : first_cpu;
-//	func_addrs = name_addrs = NULL;
-//	pedt = NULL;
-//	DWORD ver = nth->OptionalHeader.CheckSum;
-//	edt_va = nth->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
-//	edt_size = nth->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].Size;
-//
-//	pedt = (IMAGE_EXPORT_DIRECTORY *) malloc (sizeof(*pedt));
-//	memset(pedt, 0, sizeof(*pedt));
-//	//monitor_printf(default_mon, "checksum: 0x%08x \n", ver);
-//	//monitor_printf(default_mon, "base:x%08x, offset:0x%08x \n",base, base + edt_va);
-//
-//	if( DECAF_memory_rw_with_cr3 (env, cr3, base + edt_va, (void *)pedt, sizeof(*pedt), 0) < 0) {
-//		monitor_printf(default_mon, "Unable to read exp dir from image. \n");
-//		goto done;
-//	}
-//
-//	func_addrs = (DWORD *) malloc (sizeof(DWORD *) * pedt->NumberOfFunctions);
-//	memset(func_addrs, 0, sizeof(DWORD *) * pedt->NumberOfFunctions);
-//	if(DECAF_memory_rw_with_cr3 (env, cr3, base + pedt->AddressOfFunctions, (void *)func_addrs, sizeof(DWORD *) * pedt->NumberOfFunctions, 0) < 0) {
-//		monitor_printf(default_mon, "Unable to read func_addrs from image. \n");
-//		goto done;
-//	}
-//
-//	name_addrs = (DWORD *) malloc (sizeof(DWORD *) * pedt->NumberOfNames);
-//	memset(name_addrs, 0, sizeof(DWORD *) * pedt->NumberOfNames);
-//	if(DECAF_memory_rw_with_cr3 (env, cr3, base + pedt->AddressOfNames, (void *)name_addrs, sizeof(DWORD *) * pedt->NumberOfNames, 0) < 0) {
-//		monitor_printf(default_mon, "Unable to read name_addrs from image. \n");
-//		goto done;
-//	}
-//
-//	for(i = 0; i < pedt->NumberOfFunctions && i < pedt->NumberOfNames; i++){
-//		DECAF_memory_rw_with_cr3(env, cr3, base + name_addrs[i], (void *) &name[0], 128, 0);
-//		sprintf(msg, "F %s %s %08x\n", mod->name, name, func_addrs[i]);
-//		parse_function(msg);
-//		monitor_printf(default_mon, "F %08x : %s\n", func_addrs[i], name);
-//	}
-//	monitor_printf(default_mon, "Total exports = %d, %d\n", pedt->NumberOfFunctions, pedt->NumberOfNames);
-//done:
-//	if(func_addrs)
-//		free(func_addrs);
-//
-//	if(name_addrs)
-//		free(name_addrs);
-//
-//	if(pedt)
-//		free(pedt);
-//	func_addrs = name_addrs = NULL;
-//	pedt = NULL;
-//}
-
-// extract dll verison, size info
-static void extract_PE_info(process *proc, uint32_t base, module *mod){
-	uint32_t cr3;
-	CPUState *env = cpu_single_env ? cpu_single_env : first_cpu;
-	DECAF_read_mem(env, proc->EPROC_base_addr+ 0x18, 4, (uint8_t *) &cr3);
-	//monitor_printf(default_mon, "cr3 0x%08x, base 0x%08x\n",cr3, base);
-	char *fullname = mod->fullname;
-	uint8_t data[64] = {0};
-	uint8_t data1[512] = {0};
-	IMAGE_DOS_HEADER * DosHeader = NULL;
-	IMAGE_NT_HEADERS *nth = NULL;
-	uint8_t *file_data = NULL;
-	DECAF_memory_rw_with_cr3(env, cr3, base, (void *)&data[0], sizeof(IMAGE_DOS_HEADER), 0);
-
-	DosHeader = (IMAGE_DOS_HEADER *) data;
-	if (DosHeader->e_magic != (0x5a4d)) {
-		monitor_printf(default_mon, "Error -- Not a valid PE file!\n");
-		return;
-	}
-
-	if(DECAF_memory_rw_with_cr3(env, cr3, base + DosHeader->e_lfanew, (void *)&data1[0], sizeof(IMAGE_NT_HEADERS), 0) < 0) {
-		monitor_printf(default_mon, "Reading NTHeader failed. :'(\n");
-		monitor_printf(default_mon, "%s, 0x%08x, %d\n", fullname, base, DosHeader->e_lfanew);
-		return;
-	}
-
-	nth = (IMAGE_NT_HEADERS *) data1;
-	file_data = (uint8_t *) malloc (nth->OptionalHeader.SizeOfImage);
-	if(file_data == NULL) {
-		monitor_printf(default_mon, "malloc failed in wl_load_module_notify. :'(\n");
-//		vm_stop(0);
-	}
-	extract_dll_info(nth, cr3, base, mod); // extract info in IMAGE_NT_HEADERS
-	if(file_data)
-		free(file_data);
-	file_data = NULL;
-}
-// not used
-//static void extract_PE_symtab(process *proc, uint32_t base, module *mod)
-//{
-//	uint32_t cr3;
-//	CPUState *env = cpu_single_env ? cpu_single_env : first_cpu;
-//	DECAF_read_mem(env, proc->EPROC_base_addr+ 0x18, 4, (uint8_t *) &cr3);
-//	monitor_printf(default_mon, "cr3 0x%08x, base 0x%08x\n",cr3, base);
-//	char *fullname = mod->fullname;
-//	uint8_t data[128] = {0};
-//	int i;
-//	IMAGE_DOS_HEADER * DosHeader = NULL;
-//	IMAGE_NT_HEADERS *nth = NULL;
-//	uint8_t *file_data = NULL;
-//
-//	DECAF_memory_rw_with_cr3(env, cr3, base, (void *)&data[0], sizeof(IMAGE_DOS_HEADER), 0);
-//
-//	DosHeader = (IMAGE_DOS_HEADER *) data;
-//	if (DosHeader->e_magic != (0x5a4d)) {
-//		monitor_printf(default_mon, "Error -- Not a valid PE file!\n");
-//		return;
-//	}
-//
-//	if(DECAF_memory_rw_with_cr3(env, cr3, base + DosHeader->e_lfanew, (void *)&data[0], sizeof(IMAGE_NT_HEADERS), 0) < 0) {
-//		monitor_printf(default_mon, "Reading NTHeader failed. :'(\n");
-//		monitor_printf(default_mon, "%s, 0x%08x, %d\n", fullname, base, DosHeader->e_lfanew);
-//		return;
-//	}
-//
-//	nth = (IMAGE_NT_HEADERS *) data;
-////	monitor_printf(default_mon, "Loaded: %s, size: %d\n", fullname, nth->OptionalHeader.SizeOfImage);
-//	file_data = (uint8_t *) malloc (nth->OptionalHeader.SizeOfImage);
-//	if(file_data == NULL) {
-//		monitor_printf(default_mon, "malloc failed in wl_load_module_notify. :'(\n");
-////		vm_stop(0);
-//	}
-//	extract_export_table_from(nth, cr3, base, mod);
-//	if(file_data)
-//		free(file_data);
-//	file_data = NULL;
-//}
 
 
+#if 0
 static int db_callback(void *NotUsed, int argc, char **argv, char **szColName){
 	ifstream file;
 	char msg[256];
@@ -328,6 +186,7 @@ void extract_funcs(process *proc, uint32_t base, module *mod){
 	}
 	sqlite3_close(db);
 }
+#endif
 
 int procmod_insert_modinfoV(uint32_t pid, uint32_t base, module *mod) {
 
@@ -349,18 +208,6 @@ int procmod_insert_modinfoV(uint32_t pid, uint32_t base, module *mod) {
 
 	//Now we insert the new module in module_list
 	proc->module_list[base] = mod;
-
-	//Check if symbols have already been extracted
-	if (findModule(mod->fullname) == NULL) {
-
-		if (GuestOS_index_c <= 3) { //This is windows therefore a PE file
-			//extract_PE_symtab(proc, base, mod);
-			extract_PE_info(proc, base, mod);
-			extract_funcs(proc, base, mod);
-		} else {
-			//TODO: extract elf symtab
-		}
-	}
 
 	return 0;
 }
@@ -424,6 +271,7 @@ int update_procV(process *proc)
 	return 0;
 }
 
+#if 0
 int addFuncV(module *mod,string name,uint32_t offset){
 	unordered_map < string, uint32_t >::iterator iter =(mod->function_map_name).find(name);
 	unordered_map < uint32_t, string >::iterator iter1 =(mod->function_map_offset).find(offset);
@@ -455,6 +303,7 @@ int removeFuncNameV(module *mod,string name){
 	removeFuncV(mod,offset);
 	return 0;
 }
+#endif
 
 dmodule *find_module_byeipV(uint32_t eip,
 				     unordered_map< uint32_t,module * >&module_list){
@@ -634,6 +483,7 @@ dprocess *find_all_processes_infoV(size_t * num_proc)
     return arr;
 }
 
+
 static void block_end_cb(DECAF_Callback_Params* temp)
 {
     int i=0;
@@ -660,12 +510,6 @@ static void block_end_cb(DECAF_Callback_Params* temp)
 	}
 }
 
-
-void vmi_init()
-{
-	monitor_printf(default_mon, "inside vmi init \n");
-	insn_handle_c = DECAF_register_callback(DECAF_BLOCK_END_CB, block_end_cb, NULL);
-}
 
 process* findProcessByNameH(char *name)
 {
@@ -699,6 +543,7 @@ int findCr3(uint32_t cr3){
 	return 1;
 }
 
+/*
 void insertCr3(uint32_t cr3){
 	cr3s.insert(cr3);
 }
@@ -729,12 +574,12 @@ void insertvaddrincr3(uint32_t cr3,target_ulong vaddr){
 	if (iter != cr3infos.end()){
 		iter->second->vaddr_tbl->insert(vaddr);
 	}
-}
+} */
 
-int addModule(module *mod){
+int addModule(module *mod, char *key){
 	if(mod==NULL)
 		return -1;
-	string temp(mod->fullname);
+	string temp(key);
 	unordered_map < string, module * >::iterator iter = module_name.find(temp);
 	if (iter != module_name.end()){
 		return -1;
@@ -743,10 +588,9 @@ int addModule(module *mod){
 	return 1;
 }
 
-module* findModule(char *name){
-	if(name==NULL)
-		return NULL;
-	string temp(name);
+module* findModule(char *key)
+{
+	string temp(key);
 	unordered_map < string, module * >::iterator iter =
 		module_name.find(temp);
 	if (iter != module_name.end()){
@@ -754,5 +598,13 @@ module* findModule(char *name){
 	}
 	return NULL;
 }
+
+
+void vmi_init()
+{
+	monitor_printf(default_mon, "inside vmi init \n");
+	insn_handle_c = DECAF_register_callback(DECAF_BLOCK_END_CB, block_end_cb, NULL);
+}
+
 #endif
 

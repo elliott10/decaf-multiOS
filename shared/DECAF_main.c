@@ -28,6 +28,7 @@
 #include "shared/DECAF_main_internal.h"
 #include "shared/DECAF_vm_compress.h"
 #include "shared/DECAF_cmds.h"
+#include "shared/DECAF_callback_to_QEMU.h"
 #include "shared/hookapi.h"
 #include "DECAF_target.h"
 #include "procmod.h" //remove this later
@@ -44,6 +45,8 @@ plugin_interface_t *decaf_plugin = NULL;
 static void *plugin_handle = NULL;
 static char decaf_plugin_path[PATH_MAX] = "";
 static FILE *decaflog = NULL;
+
+int should_monitor = 1;
 
 mon_cmd_t DECAF_mon_cmds[] = {
 #include "DECAF_mon_cmds.h"
@@ -120,7 +123,7 @@ DECAF_errno_t DECAF_memory_rw(CPUState* env, uint32_t addr, void *buf, int len,
 	return 0;
 }
 
-DECAF_errno_t DECAF_memory_rw_with_cr3(CPUState* env, target_ulong cr3,
+DECAF_errno_t DECAF_memory_rw_with_pgd(CPUState* env, target_ulong pgd,
 		gva_t addr, void *buf, int len, int is_write) {
 	if (env == NULL ) {
 #ifdef DECAF_NO_FAIL_SAFE
@@ -135,7 +138,7 @@ DECAF_errno_t DECAF_memory_rw_with_cr3(CPUState* env, target_ulong cr3,
 
 	while (len > 0) {
 		page = addr & TARGET_PAGE_MASK;
-		phys_addr = DECAF_get_physaddr_with_cr3(env, cr3, page);
+		phys_addr = DECAF_get_phys_addr_with_pgd(env, pgd, page);
 		if (phys_addr == -1)
 			return -1;
 		l = (page + TARGET_PAGE_SIZE) - addr;
@@ -158,22 +161,20 @@ DECAF_errno_t DECAF_write_mem(CPUState* env, gva_t vaddr, int len, void *buf) {
 	return DECAF_memory_rw(env, vaddr, buf, len, 1);
 }
 
-DECAF_errno_t DECAF_read_mem_with_cr3(CPUState* env, target_ulong cr3,
+DECAF_errno_t DECAF_read_mem_with_pgd(CPUState* env, target_ulong cr3,
 		gva_t vaddr, int len, void *buf) {
-	return DECAF_memory_rw_with_cr3(env, cr3, vaddr, buf, len, 0);
+	return DECAF_memory_rw_with_pgd(env, cr3, vaddr, buf, len, 0);
 }
 
-DECAF_errno_t DECAF_write_mem_with_cr3(CPUState* env, target_ulong cr3,
+DECAF_errno_t DECAF_write_mem_with_pgd(CPUState* env, target_ulong cr3,
 		gva_t vaddr, int len, void *buf) {
-	return DECAF_memory_rw_with_cr3(env, cr3, vaddr, buf, len, 1);
+	return DECAF_memory_rw_with_pgd(env, cr3, vaddr, buf, len, 1);
 }
 
 //Modified from tb_find_slow
 static TranslationBlock *DECAF_tb_find_slow(CPUState *env, target_ulong pc) {
 	TranslationBlock *tb, **ptb1;
 	unsigned int h;
-	tb_page_addr_t phys_pc, phys_page1;
-	target_ulong virt_page2;
 
 	tb_invalidated_flag = 0;
 
@@ -192,7 +193,6 @@ static TranslationBlock *DECAF_tb_find_slow(CPUState *env, target_ulong pc) {
 		}
 	}
 
-	not_found:
 	//DECAF_printf("DECAF_tb_find_slow: not found!\n");
 	return NULL ;
 
@@ -224,9 +224,8 @@ void DECAF_flushTranslationBlock_env(CPUState *env, uint32_t addr) {
 	tb_phys_invalidate(tb, -1);
 }
 
-void DECAF_flushTranslationPage_env(CPUState* env, uint32_t addr) {
-	target_phys_addr_t p_addr;
-
+void DECAF_flushTranslationPage_env(CPUState* env, uint32_t addr)
+{
 	if (env == NULL ) {
 #ifdef DECAF_NO_FAIL_SAFE
 		return;
@@ -334,7 +333,10 @@ int do_unload_plugin(Monitor *mon, const QDict *qdict, QObject **ret_data) {
 
 		//Flush all the callbacks that the plugin might have registered for
 		hookapi_flush_hooks(decaf_plugin_path);
+#ifdef TARGET_I386
+		//Currently opcode-based callback mechanism is only available in x86.
 		DECAF_cleanup_insn_cbs();
+#endif
 //LOK: Created a new callback interface for procmod
 		//        loadmainmodule_notify = createproc_notify = removeproc_notify = loadmodule_notify = NULL;
 

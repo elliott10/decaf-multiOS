@@ -201,8 +201,8 @@ static void hookapi_check_hook(DECAF_Callback_Params* params)
 {
         if(cpu_single_env == NULL) return;
 
-        target_ulong pc = cpu_single_env->eip + cpu_single_env->segs[R_CS].base;
-        target_ulong cr3 = cpu_single_env->cr[3];
+        target_ulong pc = DECAF_getPC(cpu_single_env);
+        target_ulong pgd = DECAF_getPGD(cpu_single_env);
 
     struct hookapi_record_list_head *head =
               &hookapi_record_heads[pc & (HOOKAPI_HTAB_SIZE - 1)];
@@ -214,21 +214,26 @@ static void hookapi_check_hook(DECAF_Callback_Params* params)
 
             if(record->eip != pc)
                 continue;
+            
+            //On the same execution point, there might be multiple callbacks registered.
+            //So we have to check the handle to make sure we act on the same callback
+            if(record->cbhandle != params->cbhandle)
+                continue;    
 
             //check if this hook is only for a specific memory space
-            if(record->cr3 != 0 && record->cr3!=cr3)
+            if(record->cr3 != 0 && record->cr3!=pgd)
                 continue;
 
             //check if this is a global hook
             //if it is a local hook, then should_monitor must be true
-            if(!record->is_global && !should_monitor)
+            if(!record->is_global && ! should_monitor)
                 continue;
 
             //check if this is a return hook.
             //the recorded ESP must be close enough to the current ESP.
             //otherwise, it must be a return hook for the same function call in a different thread.
             //The threshold 80 is based on that normally no function has more than 20 arguments.
-            if(record->esp && cpu_single_env->regs[R_ESP] - record->esp > 80)
+            if(record->esp && DECAF_getESP(cpu_single_env) - record->esp > 80)
                 continue;
 
             record->fnhook(record->opaque);
@@ -435,12 +440,10 @@ hookapi_hook_return(
 
   record->eip = pc;
   record->is_global = 0;
-#ifdef TARGET_I386
-  record->esp = DECAF_cpu_regs[R_ESP];
-  record->cr3 = DECAF_cpu_cr[3];
-#else
-  fix me
-#endif
+
+  record->esp = DECAF_getESP(cpu_single_env);
+  record->cr3 = DECAF_getPGD(cpu_single_env);
+
   record->fnhook = fnhook;
   record->sizeof_opaque = sizeof_opaque;
   record->opaque = opaque;

@@ -251,12 +251,14 @@ DECAF_Handle DECAF_registerOptimizedBlockBeginCallback(
     gva_t addr,
     OCB_t type)
 {
-
   callback_struct_t * cb_struct = (callback_struct_t *)malloc(sizeof(callback_struct_t));
   if (cb_struct == NULL)
   {
     return (DECAF_NULL_HANDLE);
   }
+  
+  //Heng: Optimization on OCB_CONST is not stable. We use OCB_ALL instead for now.
+  if (type == OCB_CONST) type = OCB_ALL;
 
   //pre-populate the info
   cb_struct->callback = cb_func;
@@ -494,7 +496,11 @@ DECAF_errno_t DECAF_unregisterOptimizedBlockBeginCallback(DECAF_Handle handle)
         }
         if (CountingHashtable_remove(pOBBTable, cb_struct->from) == 0)
         {
-          DECAF_flushTranslationBlock(cb_struct->from);
+          //Heng: Comment out the line below, so we don't flush the translation block immediately.
+          //Guest kernel reboot is observed if we immediately flush the translation block. So I 
+          //decide not to do so. It may even help to improve performance in certain cases.
+
+          //DECAF_flushTranslationBlock(cb_struct->from);
         }
         break;
       }
@@ -506,7 +512,8 @@ DECAF_errno_t DECAF_unregisterOptimizedBlockBeginCallback(DECAF_Handle handle)
         }
         if (CountingHashtable_remove(pOBBPageTable, cb_struct->from) == 0)
         {
-          DECAF_flushTranslationPage(cb_struct->from);
+          //Heng: Comment out the line below, so we don't flush the translation page immediately.
+          //DECAF_flushTranslationPage(cb_struct->from);
         }
         break;
       }
@@ -662,6 +669,7 @@ PUSH_ALL()
     // invoke this callback
     if(!cb_struct->enabled || *cb_struct->enabled)
     {
+      params.cbhandle = (DECAF_Handle)cb_struct;
       switch (cb_struct->ocb_type)
       {
         default:
@@ -707,6 +715,8 @@ PUSH_ALL()
 
 #ifdef TARGET_I386
   params.be.next_pc = env->eip + env->segs[R_CS].base;
+#elif defined(TARGET_ARM)
+  params.be.next_pc = env->regs[15];
 #else
   fix this error
 #endif
@@ -717,6 +727,7 @@ PUSH_ALL()
     // invoke this callback
     if(!cb_struct->enabled || *cb_struct->enabled)
     {
+      params.cbhandle = (DECAF_Handle)cb_struct;
       if (cb_struct->to == INV_ADDR)
       {
         cb_struct->callback(&params);
@@ -754,6 +765,7 @@ PUSH_ALL()
 	LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_INSN_BEGIN_CB], link) {
 		// If it is a global callback or it is within the execution context,
 		// invoke this callback
+        params.cbhandle = (DECAF_Handle)cb_struct;
 		if(!cb_struct->enabled || *cb_struct->enabled)
 			cb_struct->callback(&params);
 	}
@@ -773,6 +785,7 @@ PUSH_ALL()
 	LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_INSN_END_CB], link) {
 		// If it is a global callback or it is within the execution context,
 		// invoke this callback
+	    params.cbhandle = (DECAF_Handle)cb_struct;
 		if(!cb_struct->enabled || *cb_struct->enabled)
 			cb_struct->callback(&params);
 	}
@@ -795,6 +808,7 @@ void helper_DECAF_invoke_mem_read_callback(gva_t virt_addr,gpa_t phy_addr,DATA_T
 	{
 		// If it is a global callback or it is within the execution context,
 		// invoke this callback
+	    params.cbhandle = (DECAF_Handle)cb_struct;
 		if (!cb_struct->enabled || *cb_struct->enabled) {
 			cb_struct->callback(&params);
 		}
@@ -812,6 +826,7 @@ void helper_DECAF_invoke_eip_check_callback(gva_t eip)
 	{
 		// If it is a global callback or it is within the execution context,
 		// invoke this callback
+        params.cbhandle = (DECAF_Handle)cb_struct;
 		if (!cb_struct->enabled || *cb_struct->enabled) {
 			cb_struct->callback(&params);
 		}
@@ -832,6 +847,7 @@ void helper_DECAF_invoke_keystroke_callback(int keycode,uint32_t *taint_mark)
 	{
 		// If it is a global callback or it is within the execution context,
 		// invoke this callback
+        params.cbhandle = (DECAF_Handle)cb_struct;
 		if (!cb_struct->enabled || *cb_struct->enabled) {
 			cb_struct->callback(&params);
 		}
@@ -855,6 +871,7 @@ void helper_DECAF_invoke_mem_write_callback(gva_t virt_addr,gpa_t phy_addr,DATA_
 	{
 		// If it is a global callback or it is within the execution context,
 		// invoke this callback
+        params.cbhandle = (DECAF_Handle)cb_struct;
 		if (!cb_struct->enabled || *cb_struct->enabled)
 			cb_struct->callback(&params);
 	}
@@ -875,6 +892,7 @@ void helper_DECAF_invoke_nic_rec_callback(uint8_t * buf,int size,int cur_pos,int
 	{
 		// If it is a global callback or it is within the execution context,
 		// invoke this callback
+        params.cbhandle = (DECAF_Handle)cb_struct;
 		if (!cb_struct->enabled || *cb_struct->enabled)
 			cb_struct->callback(&params);
 	}
@@ -893,10 +911,12 @@ void helper_DECAF_invoke_nic_send_callback(uint32_t addr,int size,uint8_t *buf)
 	{
 		// If it is a global callback or it is within the execution context,
 		// invoke this callback
+        params.cbhandle = (DECAF_Handle)cb_struct;
 		if (!cb_struct->enabled || *cb_struct->enabled)
 			cb_struct->callback(&params);
 	}
 }
+
 void helper_DECAF_invoke_read_taint_mem(gva_t vaddr,gpa_t paddr,uint32_t size,uint8_t *taint_info)
 {
 	callback_struct_t *cb_struct;
@@ -911,10 +931,12 @@ void helper_DECAF_invoke_read_taint_mem(gva_t vaddr,gpa_t paddr,uint32_t size,ui
 	{
 		// If it is a global callback or it is within the execution context,
 		// invoke this callback
+        params.cbhandle = (DECAF_Handle)cb_struct;
 		if (!cb_struct->enabled || *cb_struct->enabled)
 			cb_struct->callback(&params);
 	}
 }
+
 void helper_DECAF_invoke_write_taint_mem(gva_t vaddr,gpa_t paddr,uint32_t size,uint8_t *taint_info)
 {
 	callback_struct_t *cb_struct;
@@ -929,10 +951,13 @@ void helper_DECAF_invoke_write_taint_mem(gva_t vaddr,gpa_t paddr,uint32_t size,u
 	{
 		// If it is a global callback or it is within the execution context,
 		// invoke this callback
+        params.cbhandle = (DECAF_Handle)cb_struct;
 		if (!cb_struct->enabled || *cb_struct->enabled)
 			cb_struct->callback(&params);
 	}
 }
+
+
 void DECAF_callback_init(void)
 {
   int i;

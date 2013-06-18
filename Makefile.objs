@@ -431,11 +431,11 @@ QEMU_CFLAGS+=$(GLIB_CFLAGS)
 QEMU_CPPFLAGS+=$(QEMU_CFLAGS)
 #LOK: moved the callback interface into the shared directory
 libdecaf-y=DECAF_callback.o DECAF_main.o DECAF_cmds.o
-libdecaf-y+=procmod.o read_linux.o hookapi.o windows_vmi.o vmi.o
+libdecaf-y+=procmod.o read_linux.o hookapi.o windows_vmi.o vmi.o linux_vmi.o
 libdecaf-y+=function_map.o
 libdecaf-y+=tainting/reduce_taint.o tainting/taintcheck_opt.o tainting/tainting.o 
 libdecaf-y+=tainting/taint_memory.o tainting/tcg_taint.o tainting/analysis_log.o
-libdecaf-y+=sqlite3/sqlite3.o
+#libdecaf-y+=sqlite3/sqlite3.o
 libdecaf-y+=DECAF_vm_compress.o
 libdecaf-y+=utils/HashtableWrapper.o
 libdecaf-y+=utils/Output.o

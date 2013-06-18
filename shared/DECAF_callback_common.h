@@ -173,23 +173,26 @@ typedef struct _DECAF_Read_Write_Mem
 }DECAF_Write_Taint_Mem;
 
 //LOK: A dummy type
-typedef union _DECAF_Callback_Params
+typedef struct _DECAF_Callback_Params
 {
-  DECAF_Block_Begin_Params bb;
-  DECAF_Block_End_Params be;
-  DECAF_Insn_Begin_Params ib;
-  DECAF_Insn_End_Params ie;
-  DECAF_Mem_Read_Params mr;
-  DECAF_Mem_Write_Params mw;
-  DECAF_EIP_Check_Params ec;
-  DECAF_Keystroke_Params ks;
-  DECAF_Nic_Rec_Params nr;
-  DECAF_Nic_Send_Params ns;
+	DECAF_Handle cbhandle;
+	union{
+		DECAF_Block_Begin_Params bb;
+		DECAF_Block_End_Params be;
+		DECAF_Insn_Begin_Params ib;
+		DECAF_Insn_End_Params ie;
+		DECAF_Mem_Read_Params mr;
+		DECAF_Mem_Write_Params mw;
+		DECAF_EIP_Check_Params ec;
+		DECAF_Keystroke_Params ks;
+		DECAF_Nic_Rec_Params nr;
+		DECAF_Nic_Send_Params ns;
 #ifdef CONFIG_VMI_ENABLE
-  DECAF_Tlb_Exec_Params tx;
+		DECAF_Tlb_Exec_Params tx;
 #endif
-  DECAF_Read_Taint_Mem rt;
-  DECAF_Write_Taint_Mem wt;
+		DECAF_Read_Taint_Mem rt;
+		DECAF_Write_Taint_Mem wt;
+	};
 } DECAF_Callback_Params;
 
 typedef void (*DECAF_callback_func_t)(DECAF_Callback_Params*);

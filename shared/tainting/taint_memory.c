@@ -154,7 +154,7 @@ void REGPARM __taint_ldb_raw_paddr(ram_addr_t addr,gva_t vaddr)
 	  cpu_single_env->tempidx2 = 0;
 
 
-	  if (addr >= ram_size) return;
+	  if (!taint_memory_page_table || addr >= ram_size) return;
 	  middle_node_index = addr >> (BITPAGE_LEAF_BITS + BITPAGE_MIDDLE_BITS);
 	  leaf_node_index = (addr >> BITPAGE_LEAF_BITS) & MIDDLE_ADDRESS_MASK;
 
@@ -183,7 +183,7 @@ void REGPARM __taint_ldw_raw_paddr(ram_addr_t addr,gva_t vaddr)
 	  cpu_single_env->tempidx = 0;
 	  cpu_single_env->tempidx2 = 0;
 
-	  if (addr >= ram_size) return;
+	  if (!taint_memory_page_table || addr >= ram_size) return;
 	  middle_node_index = addr >> (BITPAGE_LEAF_BITS + BITPAGE_MIDDLE_BITS);
 	  leaf_node_index = (addr >> BITPAGE_LEAF_BITS) & MIDDLE_ADDRESS_MASK;
 	  if (taint_memory_page_table[middle_node_index])
@@ -210,7 +210,7 @@ void REGPARM __taint_ldl_raw_paddr(ram_addr_t addr,gva_t vaddr)
 	  cpu_single_env->tempidx = 0;
 	  cpu_single_env->tempidx2 = 0;
 
-	  if (addr >= ram_size) return;
+	  if (!taint_memory_page_table || addr >= ram_size) return;
 	  middle_node_index = addr >> (BITPAGE_LEAF_BITS + BITPAGE_MIDDLE_BITS);
 	  leaf_node_index = (addr >> BITPAGE_LEAF_BITS) & MIDDLE_ADDRESS_MASK;
 	  if (taint_memory_page_table[middle_node_index])
@@ -240,7 +240,7 @@ void REGPARM __taint_ldq_raw_paddr(ram_addr_t addr,gva_t vaddr)
 	  cpu_single_env->tempidx2 = 0;
 	  uint32_t taint_temp[2];
 
-	  if (addr >= ram_size) return;
+	  if (!taint_memory_page_table || addr >= ram_size) return;
 	  middle_node_index = addr >> (BITPAGE_LEAF_BITS + BITPAGE_MIDDLE_BITS);
 	  leaf_node_index = (addr >> BITPAGE_LEAF_BITS) & MIDDLE_ADDRESS_MASK;
 	  if (taint_memory_page_table[middle_node_index])
@@ -298,7 +298,7 @@ void REGPARM __taint_ldq_raw(unsigned long addr, gva_t vaddr) {
 }
 
 void REGPARM __taint_stb_raw_paddr(ram_addr_t addr,gva_t vaddr) {
-	if (addr >= ram_size)
+	if (!taint_memory_page_table || addr >= ram_size)
 		return;
 
 	//if (cpu_single_env->tempidx & 0xFF) { fprintf(stderr, "__taint_stb_raw(0x%08x) -> 0x%08x\n", addr, cpu_single_env->tempidx & 0xFF); __asm__ ("int $3"); }
@@ -315,7 +315,7 @@ void REGPARM __taint_stb_raw_paddr(ram_addr_t addr,gva_t vaddr) {
 }
 
 void REGPARM __taint_stw_raw_paddr(ram_addr_t addr,gva_t vaddr) {
-	if (addr >= ram_size)
+	if (!taint_memory_page_table || addr >= ram_size)
 		return;
 
 	//if (cpu_single_env->tempidx & 0xFFFF) {fprintf(stderr, "__taint_stw_raw(0x%08x) -> 0x%08x\n", addr,cpu_single_env->tempidx & 0xFFFF);__asm__ ("int $3");}
@@ -332,7 +332,7 @@ void REGPARM __taint_stw_raw_paddr(ram_addr_t addr,gva_t vaddr) {
 }
 
 void REGPARM __taint_stl_raw_paddr(ram_addr_t addr,gva_t vaddr) {
-	if (addr >= ram_size)
+	if (!taint_memory_page_table || addr >= ram_size)
 		return;
 
 	//if (cpu_single_env->tempidx & 0xFFFFFFFF) {fprintf(stderr, "__taint_stl_raw(0x%08x) -> 0x%08x\n", addr,cpu_single_env->tempidx & 0xFFFFFFFF);__asm__ ("int $3");}
@@ -349,7 +349,7 @@ void REGPARM __taint_stl_raw_paddr(ram_addr_t addr,gva_t vaddr) {
 }
 
 void REGPARM __taint_stq_raw_paddr(ram_addr_t addr,gva_t vaddr) {
-	if (addr >= ram_size)
+	if (!taint_memory_page_table || addr >= ram_size)
 		return;
 	tbitpage_leaf_t *leaf_node = NULL, *leaf_node2 = NULL;
 	uint32_t taint_temp[2];

@@ -62,11 +62,8 @@ extern "C" {
 #include "DECAF_main.h"
 #include "shared/utils/SimpleCallback.h"
 
-#ifdef CONFIG_VMI_ENABLE
+#if defined(CONFIG_VMI_ENABLE) && defined(TARGET_I386)
 
-uint32_t present_in_vtable = 0;
-uint32_t adding_to_vtable = 0;
-uint32_t getting_new_mods = 0;
 off_set xp_offset = { 0x18, 0x20, 0x2c, 0x88, 0x84, 0x174, 0x14c, 0x1a0, 0xc4,
 		0x3c, 0x190, 0x1ec, 0x22c, 0x134, 0x78 };
 off_set w7_offset = { 0x18, 0x20, 0x24, 0xb8, 0xb4, 0x16c, 0x140, 0x198, 0xf4,
@@ -78,19 +75,14 @@ static os_handle handle_funds[] = {
 		{ WIN7_SP0, &w7_offset, 0, NULL, 0, 0, 0, },
 		{ WIN7_SP1, &w7_offset, 0, NULL, 0, 0, 0, }, };
 
-GHashTable *cr3_hashtable = NULL;
-GHashTable *eproc_ht = NULL;
-process *system_proc = NULL;
-process *new_proc = NULL;
+process *kernel_proc = NULL;
 int rtflag = 0;
 uint32_t gkpcr;
 uint32_t GuestOS_index = 11;
 uintptr_t block_handle = 0;
-uint32_t system_cr3 = 0;
 BYTE *recon_file_data_raw = 0;
-uint32_t file_sz;
-uint32_t MAX = 500;
-unsigned long long insn_counter = 0;
+#define MAX 500
+//unsigned long long insn_counter = 0;
 /* Timer to check for proc exits */
 static QEMUTimer *recon_timer = NULL;
 
@@ -152,7 +144,6 @@ void message_p_d(dprocess* proc, int operation) {
 static process * find_new_process(CPUState *env, uint32_t cr3) {
 	uint32_t kdvb, psAPH, curr_proc, next_proc;
 	process *pe;
-	int found_new = 0;
 
 	if (gkpcr == 0)
 		return 0;
@@ -223,6 +214,25 @@ static process* get_new_process() {
 		return NULL;
 }*/
 
+static inline int get_IMAGE_NT_HEADERS(uint32_t cr3, uint32_t base, IMAGE_NT_HEADERS *nth)
+{
+	IMAGE_DOS_HEADER DosHeader;
+	DECAF_read_mem_with_pgd(cpu_single_env, cr3, base, sizeof(IMAGE_DOS_HEADER), &DosHeader);
+
+	if (DosHeader.e_magic != (0x5a4d)) {
+		return -1;
+	}
+
+	if(DECAF_read_mem_with_pgd(cpu_single_env, cr3, base + DosHeader.e_lfanew,
+			sizeof(IMAGE_NT_HEADERS), nth) < 0) {
+		//monitor_printf(default_mon, "Reading NTHeader failed. :'(\n");
+		//monitor_printf(default_mon, "%s, 0x%08x, %d\n", fullname, base, DosHeader->e_lfanew);
+		return -1;
+	}
+    return 0;
+}
+
+
 
 //FIXME: this function may potentially overflow "buf" --Heng
 static inline int readustr_with_cr3(uint32_t addr, uint32_t cr3, void *buf,
@@ -233,7 +243,7 @@ static inline int readustr_with_cr3(uint32_t addr, uint32_t cr3, void *buf,
 	char *store = (char *) buf;
 
 	if (cr3 != 0) {
-		if (DECAF_memory_rw_with_cr3(env, cr3, addr, (void *) &unicode_data,
+		if (DECAF_memory_rw_with_pgd(env, cr3, addr, (void *) &unicode_data,
 				sizeof(unicode_data), 0) < 0) {
 			store[0] = '\0';
 			goto done;
@@ -250,7 +260,7 @@ static inline int readustr_with_cr3(uint32_t addr, uint32_t cr3, void *buf,
 		unicode_len = MAX_UNICODE_LENGTH;
 
 	if (cr3 != 0) {
-		if (DECAF_memory_rw_with_cr3(env, cr3, unicode_data[1],
+		if (DECAF_memory_rw_with_pgd(env, cr3, unicode_data[1],
 				(void *) unicode_str, unicode_len, 0) < 0) {
 			store[0] = '\0';
 			goto done;
@@ -267,7 +277,7 @@ static inline int readustr_with_cr3(uint32_t addr, uint32_t cr3, void *buf,
 		if (unicode_str[i] < 0x20 || unicode_str[i] > 0x7e) //Non_printable character
 			break;
 
-		store[j] = unicode_str[i];
+		store[j] = tolower(unicode_str[i]);
 	}
 	store[j] = '\0';
 
@@ -284,7 +294,7 @@ static void update_kernel_modules(CPUState *env, target_ulong vaddr) {
 		return;
 
 	//If this page has been resolved, return immediately
-	if (is_page_resolved(system_proc, vaddr))
+	if (is_page_resolved(kernel_proc, vaddr))
 		return;
 
 	DECAF_read_mem(env, gkpcr + KDVB_OFFSET, 4, &kdvb);
@@ -292,39 +302,52 @@ static void update_kernel_modules(CPUState *env, target_ulong vaddr) {
 	DECAF_read_mem(env, psLM, 4, &curr_mod);
 
 	while (curr_mod != 0 && curr_mod != psLM) {
+		IMAGE_NT_HEADERS nth;
 		uint32_t base = 0;
 		DECAF_read_mem(env,
 				curr_mod + handle_funds[GuestOS_index].offset->DLLBASE_OFFSET,
 				4, &base); // dllbase  DLLBASE_OFFSET
 
-		if (!is_page_resolved(system_proc, base)) {
+		if (is_page_resolved(kernel_proc, base))
+			goto next;
+
+
+		char name[512];
+		char key[512];
+
+		readustr_with_cr3(curr_mod + handle_funds[GuestOS_index].offset->DLLNAME_OFFSET,
+				0, name, env);
+
+		//We get checksum and use base module name along with checksum as the key to
+		//uniquely identify a module.
+		//We do not use full module name, because the same module can be referenced through
+		//different full paths: e.g., c://windows/system32 and /systemroot/windows/system32.
+		if(get_IMAGE_NT_HEADERS(env->cr[3], base, &nth) < 0)
+			goto next;
+
+		snprintf(key, sizeof(key)-1, "%s:%08x", name, nth.OptionalHeader.CheckSum);
+		//See if we have extracted detailed info about this module
+		curr_entry = findModule(key);
+		if (!curr_entry) {
 			curr_entry = new module();
 			DECAF_read_mem(env,
 					curr_mod + handle_funds[GuestOS_index].offset->SIZE_OFFSET,
 					4, &curr_entry->size); // dllsize  SIZE_OFFSET
-			holder =
-					readustr_with_cr3(
-							curr_mod
-									+ handle_funds[GuestOS_index].offset->DLLNAME_OFFSET,
-							0, (curr_entry->name), env);
+
+			strncpy(curr_entry->name, name, sizeof(curr_entry->name)-1);
 			readustr_with_cr3(curr_mod + 0x24, 0, curr_entry->fullname, env);
-			procmod_insert_modinfoV(system_proc->pid, base, curr_entry);
-			message_m(system_proc->pid, system_proc->cr3, base, curr_entry);
-
-			if (!findModule(curr_entry->fullname))
-				//found a new module, add it to our hash table
-				addModule(curr_entry);
-			else
-				delete curr_entry;
-
 		}
 
+		procmod_insert_modinfoV(kernel_proc->pid, base, curr_entry);
+		message_m(kernel_proc->pid, kernel_proc->cr3, base, curr_entry);
+
+next:
 		DECAF_read_mem(env, curr_mod, 4, &next_mod);
 		DECAF_read_mem(env, next_mod + 4, 4, &holder);
 		if (holder != curr_mod) {
-			monitor_printf(default_mon,
-					"Something is wrong. Next->prev != curr. curr_mod = 0x%08x\n",
-					curr_mod);
+			//monitor_printf(default_mon,
+			//		"Something is wrong. Next->prev != curr. curr_mod = 0x%08x\n",
+			//		curr_mod);
 			break;
 		}
 		curr_mod = next_mod;
@@ -332,63 +355,178 @@ static void update_kernel_modules(CPUState *env, target_ulong vaddr) {
 }
 
 static void update_loaded_user_mods_with_peb(CPUState* env, process *proc,
-		uint32_t peb, target_ulong vaddr) {
-
+		uint32_t peb, target_ulong vaddr)
+{
 	uint32_t cr3 = proc->cr3;
-	uint32_t ldr, memlist, first_dll, curr_dll;
+	uint32_t ldr, memlist, first_dll=0, curr_dll, count=0;
 	module *curr_entry = NULL;
 
-	int ret = 0;
+	if (peb == 0x00) return;
 
-	if (peb == 0x00)
-		return;
+	if (is_page_resolved(proc, vaddr))	return;
 
-	if (is_page_resolved(proc, vaddr))
-		return;
-
-	DECAF_memory_rw_with_cr3(env, cr3, peb + 0xc, (void *) &ldr, 4, 0);
+	DECAF_read_mem_with_pgd(env, cr3, peb + 0xc, 4, &ldr);
 	memlist = ldr + 0xc;
-	DECAF_memory_rw_with_cr3(env, cr3, memlist, (void *) &first_dll, 4, 0);
+	DECAF_read_mem_with_pgd(env, cr3, memlist, 4, &first_dll);
 
-	if (first_dll == 0)
-		return;
+	if (first_dll == 0)	return;
 
 	curr_dll = first_dll;
-	int count;
 	do {
+		IMAGE_NT_HEADERS nth;
 		count++;
-		uint32_t base = 0;
-		if (DECAF_memory_rw_with_cr3(env, cr3, curr_dll + 0x18, &base, 4, 0)
-				< 0)
+		uint32_t base = 0; //, size = 0;
+		if (DECAF_read_mem_with_pgd(env, cr3, curr_dll + 0x18, 4, &base) < 0)
 			break;
 
 		//FIXME: why do we check base > 0x00300000?
 		if (base > 0x00300000 && !is_page_resolved(proc, base)) {
-			curr_entry = new module();
-			DECAF_memory_rw_with_cr3(env, cr3, curr_dll + 0x20,
-					&curr_entry->size, 4, 0);
-			readustr_with_cr3(curr_dll + 0x24, cr3, curr_entry->fullname, env);
-			readustr_with_cr3(curr_dll + 0x2c, cr3, curr_entry->name, env);
+			char name[512];
+			char key[512];
+
+			readustr_with_cr3(curr_dll + 0x2c, cr3, name, env);
+
+			//We get checksum and use base module name along with checksum as the key to
+			//uniquely identify a module.
+			//We do not use full module name, because the same module can be referenced through
+			//different full paths: e.g., c://windows/system32 and /systemroot/windows/system32.
+			if(get_IMAGE_NT_HEADERS(cr3, base, &nth) < 0)
+				goto next;
+
+			snprintf(key, sizeof(key)-1, "%s:%08x", name, nth.OptionalHeader.CheckSum);
+			//See if we have extracted detailed info about this module
+			curr_entry = findModule(key);
+
+			if(!curr_entry) { //We haven't seen this module before, even in other process memory spaces
+				curr_entry = new module();
+				readustr_with_cr3(curr_dll + 0x24, cr3, curr_entry->fullname, env);
+				DECAF_read_mem_with_pgd(env, cr3, curr_dll + 0x20, 4, &curr_entry->size);
+				strncpy(curr_entry->name, name, sizeof(curr_entry->name)-1);
+			}
+
 			procmod_insert_modinfoV(proc->pid, base, curr_entry);
 			message_m(proc->pid, cr3, base, curr_entry);
-			if (!findModule(curr_entry->fullname))
-				addModule(curr_entry);
-			else
-				delete curr_entry;
-
 		}
 
-		DECAF_memory_rw_with_cr3(env, cr3, curr_dll, (void *) &curr_dll, 4, 0);
+next:
+		//read the next DLL
+		DECAF_read_mem_with_pgd(env, cr3, curr_dll, 4, &curr_dll);
 	} while (curr_dll != 0 && curr_dll != first_dll && count < MAX);
 }
 
+static void extract_export_table(IMAGE_NT_HEADERS *nth, uint32_t cr3, uint32_t base, module *mod)
+{
+	IMAGE_EXPORT_DIRECTORY ied;
+	DWORD edt_va, edt_size;
+	DWORD *func_addrs=NULL, *name_addrs=NULL;
+	WORD *ordinals=NULL;
+	char name[64];
+	char msg[512];
+	DWORD i;
+	CPUState *env = cpu_single_env;
+	edt_va = nth->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
+	edt_size = nth->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].Size;
 
-static void get_new_modules(CPUState* env, process * proc, target_ulong vaddr) {
+	if(DECAF_read_mem_with_pgd(env, cr3, base + edt_va, sizeof(ied), &ied) < 0) {
+		//monitor_printf(default_mon, "Unable to read exp dir from image: mod=%s:%d base=%08x, va=%08x.\n", mod->name, ver, base, edt_va);
+		//DECAF_stop_vm();
+		goto done;
+	}
 
-	uint32_t cr3 = proc->cr3;
+	if(ied.NumberOfFunctions == 0 || ied.NumberOfNames == 0) {
+		mod->symbols_extracted = true;
+		goto done;
+	}
 
+	func_addrs = (DWORD *) malloc (sizeof(DWORD) * ied.NumberOfFunctions);
+	name_addrs = (DWORD *) malloc (sizeof(DWORD) * ied.NumberOfNames);
+	ordinals = (WORD *) malloc (sizeof(WORD) * ied.NumberOfNames);
+	if(!func_addrs || !name_addrs || !ordinals)
+		goto done;
+
+	if(DECAF_read_mem_with_pgd(env, cr3, base + ied.AddressOfFunctions,
+			sizeof(DWORD) * ied.NumberOfFunctions, func_addrs) < 0) {
+		goto done;
+	}
+
+	if(DECAF_read_mem_with_pgd(env, cr3, base + ied.AddressOfNames,
+			sizeof(DWORD) * ied.NumberOfNames, name_addrs) < 0) {
+		goto done;
+	}
+
+	if(DECAF_read_mem_with_pgd(env, cr3, base + ied.AddressOfNameOrdinals,
+			sizeof(WORD) * ied.NumberOfNames, ordinals) < 0) {
+		goto done;
+	}
+
+	for(i = 0; i < ied.NumberOfNames; i++) {
+		WORD index = ordinals[i];
+		if(index >= ied.NumberOfFunctions)
+			continue;
+
+		DECAF_read_mem_with_pgd(env, cr3, base + name_addrs[i], sizeof(name)-1, name);
+		name[127] = 0;
+		snprintf(msg, sizeof(msg)-1, "F %s %s %08x\n", mod->name, name, func_addrs[index]);
+		handle_guest_message(msg);
+		//monitor_printf(default_mon, "%s", msg);
+	}
+	//monitor_printf(default_mon, "%s: Total exports = %d, %d\n", mod->fullname, ied.NumberOfFunctions, ied.NumberOfNames);
+
+	mod->symbols_extracted = true;
+
+done:
+	if(func_addrs)
+		free(func_addrs);
+
+	if(name_addrs)
+		free(name_addrs);
+
+	if(ordinals)
+		free(ordinals);
+}
+
+//Extract info in PE header and export table from a PE module
+//If everything is done successfully, mod->symbols_extracted will be set true
+static void extract_PE_info(uint32_t cr3, uint32_t base, module *mod)
+{
+	IMAGE_NT_HEADERS nth;
+
+	if (get_IMAGE_NT_HEADERS(cr3, base, &nth) < 0)
+		return;
+
+	mod->checksum = nth.OptionalHeader.CheckSum;
+	mod->codesize = nth.OptionalHeader.SizeOfCode;
+	mod->major = nth.OptionalHeader.MajorImageVersion;
+	mod->minor = nth.OptionalHeader.MinorImageVersion;
+	extract_export_table(&nth, cr3, base, mod);
+}
+
+
+static void retrieve_missing_symbols(process *proc)
+{
+	unordered_map < uint32_t,module * >::iterator iter = proc->module_list.begin();
+
+	for(; iter!=proc->module_list.end(); iter++) {
+		module *cur_mod = iter->second;
+		if(cur_mod->symbols_extracted) continue;
+
+		extract_PE_info(proc->cr3, iter->first, cur_mod);
+
+		if(cur_mod->symbols_extracted) {
+			//Now the symbols in this module have been extracted.
+			//Add this module into our module map, so we don't need to extract again.
+			char key[512];
+			snprintf(key, sizeof(key)-1, "%s:%08x", cur_mod->name, cur_mod->checksum);
+			addModule(cur_mod, key);
+		}
+
+	}
+}
+
+static void get_new_modules(CPUState* env, process * proc, target_ulong vaddr)
+{
 	uint32_t base = 0, self = 0, pid = 0;
-	if (proc == system_proc) {
+	if (proc == kernel_proc) {
 		update_kernel_modules(env, vaddr);
 	} else {
 		base = env->segs[R_FS].base;
@@ -406,33 +544,20 @@ static void get_new_modules(CPUState* env, process * proc, target_ulong vaddr) {
 	}
 }
 
-void tlb_call_back(DECAF_Callback_Params *temp) {
+static void tlb_call_back(DECAF_Callback_Params *temp) {
 	CPUState *env = temp->tx.env;
 	target_ulong vaddr = temp->tx.vaddr;
-	//struct cr3_info* cr3i = NULL;
-	int newflag = 0;
-
-	//target_ulong modules;
 	uint32_t exit_page = 0;
 	uint32_t cr3 = env->cr[3];
+	process *proc;
 
-	//Heng: The control flow in this function was terrible. not clear what would happen in different cases.
-	//goto statement makes it even worse. No comments for each case, making it hard to understand and maintain
-	//the code in the future.
-
-	//Heng: vim.cpp has defined hash table for cr3. why not just use it?
-	//In particular, findcr3, insertcr3, addcr3info, etc.
-	//By design, we put os-independent stuff in vmi.cpp. Windows_vmi.cpp only implements windows-specific stuff.
-	//cr3i = (cr3_info *) g_hash_table_lookup(cr3_hashtable, (gpointer) cr3);	//to check for a new cr3
-	process *proc = findProcessByCR3(cr3);
-
-	if (proc == NULL) {
-		//We see a new cr3
-		//If this execution is in user land, then this is a new process.
-		//Otherwise, it is just within the kernel execution, so we don't care.
-		if (!DECAF_is_in_kernel()) {
-			newflag = 1;
-
+	if(DECAF_is_in_kernel()) {
+		proc = kernel_proc;
+		kernel_proc->cr3 = cr3;
+	} else {
+		proc = findProcessByCR3(cr3);
+		if (proc == NULL) {
+#if 0
 			//If we haven't found system process, do it now.
 			if (system_proc == NULL) {
 				system_proc = find_new_process(env, cr3);
@@ -446,19 +571,22 @@ void tlb_call_back(DECAF_Callback_Params *temp) {
 
 				proc = system_proc;
 			} else {
-				proc = find_new_process(env, cr3);
-			}
+#endif
+			proc = find_new_process(env, cr3);
 		}
 	}
 
 	//getting_new_mods++;
 	//monitor_printf(default_mon,"%d\n", getting_new_mods++);
-	if (proc)
+	if (proc) {
 		get_new_modules(env, proc, vaddr);
+		retrieve_missing_symbols(proc);
+	}
 }
 
-uint32_t get_kpcr() {
-	uint32_t kpcr, selfpcr;
+static uint32_t get_kpcr(void)
+{
+	uint32_t kpcr = 0, selfpcr = 0;
 	CPUState *env;
 
 	for (env = first_cpu; env != NULL; env = env->next_cpu) {
@@ -467,18 +595,18 @@ uint32_t get_kpcr() {
 		}
 	}
 
-	kpcr = 0;
-	cpu_memory_rw_debug(env, env->segs[R_FS].base + 0x1c, (uint8_t *) &selfpcr,
-			4, 0);
+	DECAF_read_mem(env, env->segs[R_FS].base + 0x1c, 4, &selfpcr);
 
 	if (selfpcr == env->segs[R_FS].base) {
 		kpcr = selfpcr;
 	}
+
 	return kpcr;
 }
 
-static void get_os_version(CPUState *env) {
-	//uint32_t kdvb, CmNtCSDVersion, num_package;
+static void get_os_version(CPUState *env)
+{
+	//TODO: We need to check how volatility determines the OS version.
 
 	if (gkpcr == 0xffdff000) {
 		//cpu_memory_rw_debug(env, gkpcr + 0x34, (uint8_t *) &kdvb, 4, 0);
@@ -493,7 +621,6 @@ static void get_os_version(CPUState *env) {
 	} else {
 		GuestOS_index = 2; //win7
 	}
-
 }
 
 
@@ -534,24 +661,18 @@ uint32_t get_ntoskrnl(CPUState *env) {
 	return 0;
 
 found:
-	system_cr3 = env->cr[3];
 	return ntoskrnl_base;
 }
 
-static void probe_windows(CPUState *env) {
-
-	//struct cr3_info *cr3i = NULL;
-	//uint32_t cr3 = env->cr[3];
+static void probe_windows(CPUState *env)
+{
 	uint32_t base;
-	insn_counter++;
 
 	if (env->eip > 0x80000000 && env->segs[R_FS].base > 0x80000000) {
 		gkpcr = get_kpcr();
 		if (gkpcr != 0) {
 			//DECAF_unregister_callback(DECAF_INSN_END_CB, insn_handle);
 			rtflag = 1;
-			cr3_hashtable = g_hash_table_new(0, 0);
-			eproc_ht = g_hash_table_new(0, 0);
 
 			get_os_version(env);
 			base = get_ntoskrnl(env);
@@ -595,6 +716,8 @@ int find_winxpsp3(CPUState *env, uintptr_t insn_handle) {
 		return 0;
 }
 
+
+
 uint32_t exit_block_end_eip = 0;
 void check_procexit(void *) {
 	CPUState *env = cpu_single_env ? cpu_single_env : first_cpu;
@@ -630,9 +753,15 @@ void check_procexit(void *) {
 	delete[] processes;
 }
 
-void win_vmi_init() {
-
+void win_vmi_init()
+{
 	DECAF_register_callback(DECAF_TLB_EXEC_CB, tlb_call_back, NULL);
+	kernel_proc = new process();
+	kernel_proc->cr3 = 0;
+	strcpy(kernel_proc->name, "<kernel>");
+	kernel_proc->pid = 0;
+	addProcV(kernel_proc);
+
 	recon_timer = qemu_new_timer_ns(vm_clock, check_procexit, 0);
 	qemu_mod_timer(recon_timer,
 			qemu_get_clock_ns(vm_clock) + get_ticks_per_sec() * 30);

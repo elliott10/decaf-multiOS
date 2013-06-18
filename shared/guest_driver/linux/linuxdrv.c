@@ -86,7 +86,7 @@ static void linuxdrv_vma_update(struct vm_area_struct *vma, unsigned long new_st
     }
     /* send message to temu to notify vma created */
     if(VMA_CREATE == state || VMA_MODIFY == state) {
-	linuxdrv_send_message("M %d %x %s %x %x %c \n",
+	linuxdrv_send_message("M %d %x \"%s\" %x %x %c \n",
 			      owner,
 			      cr3,
 			      name,
@@ -116,7 +116,7 @@ static void linuxdrv_task_update(struct task_struct *task, enum task_state state
 	linuxdrv_send_message("P - %d \n", task->pid);
     /* send message to temu to notify new task creatation */
     if(TASK_FORK == state || TASK_EXEC == state) {
-	linuxdrv_send_message("P + %d %x %s \n", task->pid, linuxdrv_get_mem_cr3(task->mm), task->comm);
+	linuxdrv_send_message("P + %d -1 %08x %s \n", task->pid, linuxdrv_get_mem_cr3(task->mm), task->comm);
 	linuxdrv_task_vma_traversing(task);
     }
 }

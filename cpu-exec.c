@@ -204,7 +204,7 @@ int cpu_exec(CPUState *env)
     }
 
     // AWH - TEMU updating
-    DECAF_update_cpustate();
+    //DECAF_update_cpustate();
 
 #if defined(TARGET_I386)
     /* put eflags in CPU temporary format */
