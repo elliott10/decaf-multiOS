@@ -1,4 +1,9 @@
-
+DECAF_1.6 
+1. Add support for ARM
+2. Add TCG IR logging support( --enalbe-tcg-ir-log). it's closed by default.
+3. Improved VMI for Linux/Windows.
+4. Improved tainting. 
+5. Fix several bugs.
 
 Feb 13 2013 by Heng Yin
 block_end and insn_end callbacks were missing due to block chaining.
