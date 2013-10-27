@@ -56,7 +56,7 @@ typedef CPUMIPSState OurCPUState;
 // AWH - Change these to change taint/pointer rules
 #define TAINT_EXPENSIVE_ADDSUB 1
 #define TCG_BITWISE_TAINT 1
-#define TAINT_NEW_POINTER 1
+//#define TAINT_NEW_POINTER 1
 
 #if defined(LOG_POINTER) || defined(LOG_TAINTED_EIP)
 #define MAX_TAINT_LOG_TEMPS 10
