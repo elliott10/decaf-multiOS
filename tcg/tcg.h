@@ -144,11 +144,12 @@ typedef struct TCGPool {
 
 #define TCG_POOL_CHUNK_SIZE 32768
 
-#define TCG_MAX_LABELS 512
 #ifdef CONFIG_TCG_TAINT
+#define TCG_MAX_LABELS 4096
 #define TCG_MAX_TEMPS 2048
 #define TCG_STATIC_CALL_ARGS_SIZE (32 * 10 * 2)
 #else
+#define TCG_MAX_LABELS 512
 #define TCG_MAX_TEMPS 512
 
 /* when the size of the arguments of a called function is smaller than

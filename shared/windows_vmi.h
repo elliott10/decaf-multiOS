@@ -48,7 +48,7 @@ extern "C" {
 #include "config.h"
 #include "DECAF_callback_common.h" // AWH
 
-#define MAX_NAME_LENGTH 64
+#define MAX_NAME_LENGTH 128
 #define MAX_UNICODE_LENGTH 2*MAX_NAME_LENGTH
 
 #ifdef __x86_64__
@@ -79,7 +79,7 @@ extern "C" {
 #define MODULES 0
 #define PROC 1
 #define THRD 2
-#define FILE 3
+//#define FILE 3
 
 #define IMAGE_SIZEOF_SHORT_NAME 8
 #define IMAGE_NUMBEROF_DIRECTORY_ENTRIES   16

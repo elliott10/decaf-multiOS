@@ -49,6 +49,12 @@ extern DECAF_Handle DECAF_register_callback(
 
 extern int DECAF_unregister_callback(DECAF_callback_type_t cb_type, DECAF_Handle handle);
 
+DECAF_Handle DECAF_registerOpcodeRangeCallbacks (
+		DECAF_callback_func_t handler,
+		OpcodeRangeCallbackConditions *condition,
+		uint16_t start_opcode,
+		uint16_t end_opcode);
+
 DECAF_Handle DECAF_registerOptimizedBlockBeginCallback(
     DECAF_callback_func_t cb_func,
     int *cb_cond,

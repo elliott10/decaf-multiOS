@@ -244,7 +244,6 @@ int DECAF_is_BlockEndCallback_needed(gva_t from, gva_t to)
   return (CountingHashmap_exist(pOBEPageMap, from, to));
 }
 
-
 DECAF_Handle DECAF_registerOptimizedBlockBeginCallback(
     DECAF_callback_func_t cb_func,
     int *cb_cond,
@@ -331,6 +330,93 @@ DECAF_Handle DECAF_registerOptimizedBlockBeginCallback(
 
   return ((DECAF_Handle)cb_struct);
 }
+
+//Aravind - Serialized callbacks. 000 to 1ff, 1xx == 0fxx (for two byte opcodes)
+static callback_struct_t* instructionCallbacks[0x200] = {0};
+
+//Aravind - Function to register cb handlers for instruction ranges
+DECAF_Handle DECAF_registerOpcodeRangeCallbacks (
+		DECAF_callback_func_t handler,
+		OpcodeRangeCallbackConditions *condition,
+		uint16_t start_opcode,
+		uint16_t end_opcode)
+{
+	int i;
+
+	if(end_opcode < start_opcode) {
+		fprintf(stderr, "end_opcode can't be less than start_opcode.\n");
+		return DECAF_NULL_HANDLE;
+	}
+
+	callback_struct_t * cb_struct = (callback_struct_t *)malloc(sizeof(callback_struct_t));
+	if (cb_struct == NULL)
+	{
+	  return (DECAF_NULL_HANDLE);
+	}
+
+	if(start_opcode >= 0x0f00) {
+		start_opcode = 0x100 | (start_opcode & 0xff);
+	}
+
+	if(end_opcode >= 0x0f00) {
+		end_opcode = 0x100 | (end_opcode & 0xff);
+	}
+
+	cb_struct->callback = handler;
+	cb_struct->from = start_opcode;
+	cb_struct->to = end_opcode;
+	cb_struct->enabled = condition;
+
+	for(i = start_opcode; i <= end_opcode; i++) {
+		instructionCallbacks[i] = cb_struct;
+	}
+
+	LIST_INSERT_HEAD(&callback_list_heads[DECAF_OPCODE_RANGE_CB], cb_struct, link);
+
+	//Flush the tb
+	tb_flush(cpu_single_env);
+
+	return (DECAF_Handle)cb_struct;
+}
+
+//Function to unregister opcode range callbacks
+DECAF_errno_t DECAF_unregisterOpcodeRangeCallbacks(DECAF_Handle handle)
+{
+	callback_struct_t *cb_struct;
+
+	int i;
+
+	LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_OPCODE_RANGE_CB], link) {
+
+		if((DECAF_Handle)cb_struct != handle)
+			continue;
+
+		//Sanity check
+		if(cb_struct->from > 0x1ff 		||
+				cb_struct->to > 0x1ff 	||
+				cb_struct->from > cb_struct->to)
+			goto invalid_handle;
+
+		for(i = cb_struct->from; i <= cb_struct->to; i++) {
+			instructionCallbacks[i] = NULL;
+		}
+
+	    LIST_REMOVE(cb_struct, link);
+
+		free(cb_struct);
+
+		tb_flush(cpu_single_env);
+
+		return 0;
+	}
+
+invalid_handle:
+	return -1;
+}
+
+//end - Aravind
+
+
 
 DECAF_Handle DECAF_registerOptimizedBlockEndCallback(
     DECAF_callback_func_t cb_func,
@@ -629,7 +715,6 @@ done:
   return -1;
 }
 
-#ifdef CONFIG_VMI_ENABLE
 void DECAF_invoke_tlb_exec_callback(CPUState *env, gva_t vaddr)
 {
 	  callback_struct_t *cb_struct;
@@ -646,7 +731,62 @@ void DECAF_invoke_tlb_exec_callback(CPUState *env, gva_t vaddr)
 		  }
 	  }
 }
-#endif
+
+void helper_DECAF_invoke_opcode_range_callback(
+		CPUState *env,
+		target_ulong eip,
+		target_ulong next_eip,
+		uint32_t op)
+{
+	callback_struct_t *cb_struct = instructionCallbacks[op];
+	if(cb_struct == NULL || env == NULL)
+		return;
+
+	//OpcodeRangeCallbackConditions *cond = (OpcodeRangeCallbackConditions *)(cb_struct->enabled);
+	OpcodeRangeCallbackConditions temp;
+
+	//FIXME: Being naive and assuming that kernel starts from 0x80000000.
+	//Correct way to do this would be to expose an interface from vmi to indicate the kernel base.
+	uint32_t kernel_base = 0x80000000;
+	int from_user, from_kernel, to_user, to_kernel;
+	from_user = from_kernel = to_user = to_kernel = 0;
+
+	if(*(cb_struct->enabled) != DECAF_ALL) {
+		if(eip > kernel_base) {
+			from_kernel = 1;
+		} else {
+			from_user = 1;
+		}
+
+		if(next_eip > kernel_base) {
+			to_kernel = 1;
+		} else {
+			to_user = 1;
+		}
+
+		if(from_user & to_user) {
+			temp = DECAF_USER_TO_USER_ONLY;
+		} else if(from_user & to_kernel) {
+			temp = DECAF_USER_TO_KERNEL_ONLY;
+		} else if(from_kernel & to_user) {
+			temp = DECAF_KERNEL_TO_USER_ONLY;
+		} else {
+			temp = DECAF_KERNEL_TO_KERNEL_ONLY;
+		}
+
+		//Condition violated
+		if(temp & *(cb_struct->enabled) == 0)
+			return;
+	}
+
+	DECAF_Callback_Params params;
+	params.op.env = env;
+	params.op.eip = eip;
+	params.op.next_eip = next_eip;
+	params.op.op = op;
+
+	cb_struct->callback(&params);
+}
 
 void helper_DECAF_invoke_block_begin_callback(CPUState* env, TranslationBlock* tb)
 {
@@ -717,6 +857,8 @@ PUSH_ALL()
   params.be.next_pc = env->eip + env->segs[R_CS].base;
 #elif defined(TARGET_ARM)
   params.be.next_pc = env->regs[15];
+#elif defined(TARGET_MIPS)
+  params.be.next_pc = env->active_tc.PC;
 #else
   fix this error
 #endif
@@ -814,13 +956,17 @@ void helper_DECAF_invoke_mem_read_callback(gva_t virt_addr,gpa_t phy_addr,DATA_T
 		}
 	}
 }
-void helper_DECAF_invoke_eip_check_callback(gva_t eip)
+void helper_DECAF_invoke_eip_check_callback(uint32_t eip, uint32_t eip_taint)
 {
 	callback_struct_t *cb_struct;
 	DECAF_Callback_Params params;
+	PUSH_ALL() //AWH
 	params.ec.eip = eip;
+    params.ec.eip_taint = eip_taint;
 	//if (cpu_single_env == 0) return;
 
+	if(!DECAF_is_callback_needed(DECAF_EIP_CHECK_CB))
+		goto out;
 	//FIXME: not thread safe
 	LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_EIP_CHECK_CB], link)
 	{
@@ -831,7 +977,8 @@ void helper_DECAF_invoke_eip_check_callback(gva_t eip)
 			cb_struct->callback(&params);
 		}
 	}
-
+out:
+	POP_ALL() // AWH
 }
 
 void helper_DECAF_invoke_keystroke_callback(int keycode,uint32_t *taint_mark)
@@ -905,7 +1052,7 @@ void helper_DECAF_invoke_nic_send_callback(uint32_t addr,int size,uint8_t *buf)
 	params.ns.addr=addr;
 	params.ns.size=size;
 	params.ns.buf=buf;
-
+PUSH_ALL() // AWH
 	//FIXME: not thread safe
 	LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_NIC_SEND_CB], link)
 	{
@@ -915,6 +1062,7 @@ void helper_DECAF_invoke_nic_send_callback(uint32_t addr,int size,uint8_t *buf)
 		if (!cb_struct->enabled || *cb_struct->enabled)
 			cb_struct->callback(&params);
 	}
+POP_ALL() // AWH
 }
 
 void helper_DECAF_invoke_read_taint_mem(gva_t vaddr,gpa_t paddr,uint32_t size,uint8_t *taint_info)

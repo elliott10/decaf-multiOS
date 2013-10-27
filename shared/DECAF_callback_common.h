@@ -29,7 +29,17 @@ extern "C"
 #include "cpu.h"
 #include "shared/DECAF_types.h"
 
-//#include "test_tlb_cb.h"
+/*
+ * Condition flags for range callbacks. Transitions are only valid for instructions that branch.
+ * For all other instructions only 0x00, 0x01, 0x08 are valid.
+ */
+typedef enum {
+	DECAF_ALL					= 0x00,
+	DECAF_USER_TO_USER_ONLY     = 0x01,
+	DECAF_USER_TO_KERNEL_ONLY   = 0x02,
+	DECAF_KERNEL_TO_USER_ONLY   = 0x04,
+	DECAF_KERNEL_TO_KERNEL_ONLY = 0x08,
+} OpcodeRangeCallbackConditions;
 
 typedef enum {
         DECAF_BLOCK_BEGIN_CB = 0,
@@ -42,9 +52,8 @@ typedef enum {
         DECAF_KEYSTROKE_CB,//keystroke event
         DECAF_NIC_REC_CB,
         DECAF_NIC_SEND_CB,
-#ifdef CONFIG_VMI_ENABLE
+        DECAF_OPCODE_RANGE_CB,
         DECAF_TLB_EXEC_CB,
-#endif
         DECAF_READ_TAINTMEM_CB,
         DECAF_WRITE_TAINTMEM_CB,
         DECAF_LAST_CB, //place holder for the last position, no other uses.
@@ -89,13 +98,19 @@ typedef struct _DECAF_Block_Begin_Params
   TranslationBlock* tb;
 }DECAF_Block_Begin_Params;
 
-#ifdef CONFIG_VMI_ENABLE
 typedef struct _DECAF_Tlb_Exec_Params
 {
 	CPUState *env;
 	gva_t vaddr;  //Address loaded to tlb exec cache
 } DECAF_Tlb_Exec_Params;
-#endif
+
+typedef struct _DECAF_Opcode_Range_Params
+{
+	CPUState *env;
+	gva_t eip;
+	gva_t next_eip;
+	uint16_t op;
+} DECAF_Opcode_Range_Params;
 
 typedef struct _DECAF_Block_End_Params
 {
@@ -130,7 +145,8 @@ typedef struct _DECAF_Mem_Write_Params
 }DECAF_Mem_Write_Params;
 typedef struct _DECAF_EIP_Check_Params
 {
-	gva_t eip;
+	uint32_t eip;
+        uint32_t eip_taint;
 }DECAF_EIP_Check_Params;
 typedef struct _DECAF_Keystroke_Params
 {
@@ -187,9 +203,8 @@ typedef struct _DECAF_Callback_Params
 		DECAF_Keystroke_Params ks;
 		DECAF_Nic_Rec_Params nr;
 		DECAF_Nic_Send_Params ns;
-#ifdef CONFIG_VMI_ENABLE
+		DECAF_Opcode_Range_Params op;
 		DECAF_Tlb_Exec_Params tx;
-#endif
 		DECAF_Read_Taint_Mem rt;
 		DECAF_Write_Taint_Mem wt;
 	};

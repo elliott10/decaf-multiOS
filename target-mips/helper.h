@@ -1,4 +1,25 @@
 #include "def-helper.h"
+#ifdef CONFIG_TCG_TAINT
+#include "shared/tainting/DECAF_taint_helper.h"
+#endif /* CONFIG_TCG_TAINT */
+//Aravind - Generic insn_range_cb_dispatcher
+//DEF_HELPER_3(insn_cb_dispatch, void, tl, tl, i32) //insn_cb_dispatch(eip, next_eip, opcode) next_eip used if insn branches
+//end - Aravind
+
+//DEF_HELPER_1(DECAF_invoke_callback, void, i32)
+//EK - helper for adding taint
+//DEF_HELPER_1(taint_add, void, i32)
+
+//LOK: The new callback helpers
+DEF_HELPER_2(DECAF_invoke_block_begin_callback, void, ptr, ptr)
+DEF_HELPER_3(DECAF_invoke_block_end_callback, void, ptr, ptr, tl)
+DEF_HELPER_1(DECAF_invoke_insn_begin_callback, void, ptr)
+DEF_HELPER_1(DECAF_invoke_insn_end_callback, void, ptr)
+
+#ifdef CONFIG_TCG_TAINT
+DEF_HELPER_2(DECAF_invoke_eip_check_callback,void,i32,i32)
+DEF_HELPER_0(DECAF_taint_patch,void)
+#endif /* CONFIG_TCG_TAINT */
 
 DEF_HELPER_2(raise_exception_err, void, i32, int)
 DEF_HELPER_1(raise_exception, void, i32)

@@ -428,3 +428,8 @@ uint32_t HELPER(ror_cc)(uint32_t x, uint32_t i)
         return ((uint32_t)x >> shift) | (x << (32 - shift));
     }
 }
+
+#ifdef CONFIG_TCG_TAINT
+void helper_DECAF_taint_patch(void) { }
+#endif /* CONFIG_TCG_TAINT */
+

@@ -932,6 +932,8 @@ static void qemu_kvm_start_vcpu(CPUState *env)
     }
 }
 
+extern int DECAF_kvm_enabled;
+
 void qemu_init_vcpu(void *_env)
 {
     CPUState *env = _env;
@@ -939,7 +941,7 @@ void qemu_init_vcpu(void *_env)
     env->nr_cores = smp_cores;
     env->nr_threads = smp_threads;
     env->stopped = 1;
-    if (kvm_enabled()) {
+    if (kvm_enabled() && DECAF_kvm_enabled) { // Added by Heng Yin
         qemu_kvm_start_vcpu(env);
     } else {
         qemu_tcg_init_vcpu(env);

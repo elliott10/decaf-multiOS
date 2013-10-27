@@ -1476,12 +1476,19 @@ static void tcg_out_taint_qemu_st(TCGContext *s, const TCGArg *args, int opc) {
     mem_index = args[addrlo_idx + 1 + (TARGET_LONG_BITS > TCG_TARGET_REG_BITS)];
     s_bits = opc;
 
+    /* AWH - Save the virtual address */
+    tcg_out_push(s, args[addrlo_idx]);
+
     tcg_out_tlb_load(s, addrlo_idx, mem_index, s_bits, args,
                      label_ptr, offsetof(CPUTLBEntry, addr_write));
 
     /* TLB Hit.  */
+    /* AWH - Restore the virtual address */
+    tcg_out_pop(s, args[addrlo_idx]);
     tcg_out_push(s, data_reg); // Store for call to qemu_st_direct() below
     tcg_out_push(s, tcg_target_call_iarg_regs[0]); // Same
+    tcg_out_mov(s, TCG_TYPE_I32, 
+      tcg_target_call_iarg_regs[1], args[addrlo_idx]);
     switch (opc) {
     case 0:
         tcg_out_calli(s, (tcg_target_long)__taint_stb_raw);
@@ -1517,6 +1524,10 @@ static void tcg_out_taint_qemu_st(TCGContext *s, const TCGArg *args, int opc) {
     if (TARGET_LONG_BITS > TCG_TARGET_REG_BITS) {
         *label_ptr[1] = s->code_ptr - label_ptr[1] - 1;
     }
+
+    /* AWH - Pop the virtual address off the stack */
+    tcg_out_pop(s, args[addrlo_idx]);
+
     /* XXX: move that code at the end of the TB */
     /* TCG_TARGET_REG_BITS == 64 case in x86_op_defs[] */
     if (TCG_TARGET_REG_BITS == 64) { /* qemu_st8/16/32/64 */
@@ -1591,6 +1602,9 @@ static void tcg_out_taint_qemu_ld(TCGContext *s, const TCGArg *args, int opc)
     mem_index = args[addrlo_idx + 1 + (TARGET_LONG_BITS > TCG_TARGET_REG_BITS)];
     s_bits = opc & 3;
 
+    /* AWH - Save the virtual address */
+    tcg_out_push(s, args[addrlo_idx]);
+
     tcg_out_tlb_load(s, addrlo_idx, mem_index, s_bits, args,
                      label_ptr, offsetof(CPUTLBEntry, addr_read));
 
@@ -1598,11 +1612,15 @@ static void tcg_out_taint_qemu_ld(TCGContext *s, const TCGArg *args, int opc)
     /* AWH - Before we call the functionality in the function 
        tcg_out_qemu_ld_direct(), we push some parms, call our "raw" taint load 
        functions, pop the original parms, and then call tcg_out_qemu_ld_direct(). */
+    tcg_out_pop(s, args[addrlo_idx]);
+
     if (s_bits == 3)
       tcg_out_push(s, data_reg2);
     tcg_out_push(s, data_reg);
     tcg_out_push(s, tcg_target_call_iarg_regs[0]);
-
+    tcg_out_push(s, tcg_target_call_iarg_regs[1]);
+    tcg_out_mov(s, TCG_TYPE_I32, 
+      tcg_target_call_iarg_regs[1], args[addrlo_idx]);
     switch (s_bits) {
     case 0:
     case 0 | 4:
@@ -1621,6 +1639,7 @@ static void tcg_out_taint_qemu_ld(TCGContext *s, const TCGArg *args, int opc)
     default:
         tcg_abort();
     }
+    tcg_out_pop(s, tcg_target_call_iarg_regs[1]);
     tcg_out_pop(s, tcg_target_call_iarg_regs[0]);
     tcg_out_pop(s, data_reg);
     if (s_bits == 3)
@@ -1642,6 +1661,10 @@ static void tcg_out_taint_qemu_ld(TCGContext *s, const TCGArg *args, int opc)
     if (TARGET_LONG_BITS > TCG_TARGET_REG_BITS) {
         *label_ptr[1] = s->code_ptr - label_ptr[1] - 1;
     }
+
+    /* AWH - Pop the virtual address off the stack */
+    tcg_out_pop(s, args[addrlo_idx]);
+
     /* XXX: move that code at the end of the TB */
     /* The first argument is already loaded with addrlo.  */
     arg_idx = 1;
@@ -1745,6 +1768,9 @@ static inline void tcg_out_op(TCGContext *s, TCGOpcode opc,
         }
         break;
     case INDEX_op_br:
+#if 0 //def CONFIG_TCG_TAINT
+    case INDEX_op_local_br:
+#endif /* CONFIG_TCG_TAINT */
         tcg_out_jxx(s, JCC_JMP, args[0], 0);
         break;
     case INDEX_op_movi_i32:
@@ -1875,11 +1901,16 @@ static inline void tcg_out_op(TCGContext *s, TCGOpcode opc,
         tcg_out_brcond32(s, args[2], args[0], args[1], const_args[1],
                          args[3], 0);
         break;
+#if 0 //def CONFIG_TCG_TAINT
+    case INDEX_op_local_brcond_i32:
+#endif /* CONFIG_TCG_TAINT */
+        tcg_out_brcond32(s, args[2], args[0], args[1], const_args[1],
+                         args[3], 0);
+        break;
     case INDEX_op_setcond_i32:
         tcg_out_setcond32(s, args[3], args[0], args[1],
                           args[2], const_args[2]);
         break;
-
     OP_32_64(bswap16):
         tcg_out_rolw_8(s, args[0]);
         break;
@@ -1981,6 +2012,9 @@ static inline void tcg_out_op(TCGContext *s, TCGOpcode opc,
 
 #if TCG_TARGET_REG_BITS == 32
     case INDEX_op_brcond2_i32:
+#if 0 //def CONFIG_TCG_TAINT
+    case INDEX_op_local_brcond2_i32:
+#endif /* CONFIG_TCG_TAINT */
         tcg_out_brcond2(s, args, const_args, 0);
         break;
     case INDEX_op_setcond2_i32:
@@ -2031,6 +2065,9 @@ static inline void tcg_out_op(TCGContext *s, TCGOpcode opc,
         break;
 
     case INDEX_op_brcond_i64:
+#if 0 //def CONFIG_TCG_TAINT
+    case INDEX_op_local_brcond_i64:
+#endif /* CONFIG_TCG_TAINT */
         tcg_out_brcond64(s, args[2], args[0], args[1], const_args[1],
                          args[3], 0);
         break;
@@ -2079,6 +2116,9 @@ static const TCGTargetOpDef x86_op_defs[] = {
     { INDEX_op_call, { "ri" } },
     { INDEX_op_jmp, { "ri" } },
     { INDEX_op_br, { } },
+#if 0 //def CONFIG_TCG_TAINT
+    { INDEX_op_local_br, { } },
+#endif /* CONFIG_TCG_TAINT */
     { INDEX_op_mov_i32, { "r", "r" } },
     { INDEX_op_movi_i32, { "r" } },
     { INDEX_op_ld8u_i32, { "r", "r" } },
@@ -2106,6 +2146,9 @@ static const TCGTargetOpDef x86_op_defs[] = {
     { INDEX_op_rotr_i32, { "r", "0", "ci" } },
 
     { INDEX_op_brcond_i32, { "r", "ri" } },
+#if 0 //def CONFIG_TCG_TAINT
+    { INDEX_op_local_brcond_i32, { "r", "ri" } },
+#endif /* CONFIG_TCG_TAINT */
 
     { INDEX_op_bswap16_i32, { "r", "0" } },
     { INDEX_op_bswap32_i32, { "r", "0" } },
@@ -2128,6 +2171,9 @@ static const TCGTargetOpDef x86_op_defs[] = {
     { INDEX_op_add2_i32, { "r", "r", "0", "1", "ri", "ri" } },
     { INDEX_op_sub2_i32, { "r", "r", "0", "1", "ri", "ri" } },
     { INDEX_op_brcond2_i32, { "r", "r", "ri", "ri" } },
+#if 0 //def CONFIG_TCG_TAINT
+    { INDEX_op_local_brcond2_i32, { "r", "r", "ri", "ri" } },
+#endif /* CONFIG_TCG_TAINT */
     { INDEX_op_setcond2_i32, { "r", "r", "r", "ri", "ri" } },
 #else
     { INDEX_op_mov_i64, { "r", "r" } },
@@ -2160,6 +2206,9 @@ static const TCGTargetOpDef x86_op_defs[] = {
     { INDEX_op_rotr_i64, { "r", "0", "ci" } },
 
     { INDEX_op_brcond_i64, { "r", "re" } },
+#if 0 //def CONFIG_TCG_TAINT
+    { INDEX_op_local_brcond_i64, { "r", "re" } },
+#endif /* CONFIG_TCG_TAINT */
     { INDEX_op_setcond_i64, { "r", "r", "re" } },
 
     { INDEX_op_bswap16_i64, { "r", "0" } },

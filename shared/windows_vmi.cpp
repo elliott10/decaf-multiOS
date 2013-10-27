@@ -37,7 +37,7 @@
 #include <math.h>
 #include <glib.h>
 #include <mcheck.h>
-#include "sqlite3/sqlite3.h"
+#include <stdio.h>
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
@@ -85,6 +85,10 @@ BYTE *recon_file_data_raw = 0;
 //unsigned long long insn_counter = 0;
 /* Timer to check for proc exits */
 static QEMUTimer *recon_timer = NULL;
+
+
+unordered_map < uint32_t, pair<module *, uint32_t> > phys_module_map;
+
 
 static inline int is_page_resolved(process *proc, uint32_t page_num)
 {
@@ -217,13 +221,13 @@ static process* get_new_process() {
 static inline int get_IMAGE_NT_HEADERS(uint32_t cr3, uint32_t base, IMAGE_NT_HEADERS *nth)
 {
 	IMAGE_DOS_HEADER DosHeader;
-	DECAF_read_mem_with_pgd(cpu_single_env, cr3, base, sizeof(IMAGE_DOS_HEADER), &DosHeader);
+	DECAF_read_mem(cpu_single_env, base, sizeof(IMAGE_DOS_HEADER), &DosHeader);
 
 	if (DosHeader.e_magic != (0x5a4d)) {
 		return -1;
 	}
 
-	if(DECAF_read_mem_with_pgd(cpu_single_env, cr3, base + DosHeader.e_lfanew,
+	if(DECAF_read_mem(cpu_single_env, base + DosHeader.e_lfanew,
 			sizeof(IMAGE_NT_HEADERS), nth) < 0) {
 		//monitor_printf(default_mon, "Reading NTHeader failed. :'(\n");
 		//monitor_printf(default_mon, "%s, 0x%08x, %d\n", fullname, base, DosHeader->e_lfanew);
@@ -242,47 +246,42 @@ static inline int readustr_with_cr3(uint32_t addr, uint32_t cr3, void *buf,
 	uint8_t unicode_str[MAX_UNICODE_LENGTH] = { '\0' };
 	char *store = (char *) buf;
 
-	if (cr3 != 0) {
-		if (DECAF_memory_rw_with_pgd(env, cr3, addr, (void *) &unicode_data,
-				sizeof(unicode_data), 0) < 0) {
-			store[0] = '\0';
-			goto done;
-		}
-	} else {
-		if (DECAF_read_mem(env, addr, sizeof(unicode_data), unicode_data) < 0) {
-			store[0] = '\0';
-			goto done;
-		}
+	if (DECAF_read_mem(env, addr, sizeof(unicode_data), unicode_data) < 0) {
+		store[0] = '\0';
+		goto done;
 	}
 
 	unicode_len = (int) (unicode_data[0] & 0xFFFF);
 	if (unicode_len > MAX_UNICODE_LENGTH)
 		unicode_len = MAX_UNICODE_LENGTH;
 
-	if (cr3 != 0) {
-		if (DECAF_memory_rw_with_pgd(env, cr3, unicode_data[1],
-				(void *) unicode_str, unicode_len, 0) < 0) {
-			store[0] = '\0';
-			goto done;
-		}
-	} else {
-		if (DECAF_memory_rw(env, unicode_data[1], (void *) unicode_str,
-				unicode_len, 0) < 0) {
-			store[0] = '\0';
-			goto done;
-		}
+	if (DECAF_memory_rw(env, unicode_data[1], (void *) unicode_str, unicode_len, 0) < 0) {
+		store[0] = '\0';
+		goto done;
 	}
 
 	for (i = 0, j = 0; i < unicode_len; i += 2, j++) {
-		if (unicode_str[i] < 0x20 || unicode_str[i] > 0x7e) //Non_printable character
-			break;
+//		if (unicode_str[i] < 0x20 || unicode_str[i] > 0x7e) //Non_printable character
+//			break;
 
 		store[j] = tolower(unicode_str[i]);
 	}
 	store[j] = '\0';
 
 done:
-	return strlen(store);
+	return j; //strlen(store);
+}
+
+
+/* this function convert a full DLL name to a base name. */
+static char * get_basename(char *fullname)
+{
+	int i = 0, last_slash = -1, j;
+	for(; fullname[i] != 0; i++)
+		if (fullname[i] == '/' || (fullname[i] == '\\'))
+			last_slash = i;
+
+	return fullname + last_slash + 1;
 }
 
 static void update_kernel_modules(CPUState *env, target_ulong vaddr) {
@@ -294,8 +293,7 @@ static void update_kernel_modules(CPUState *env, target_ulong vaddr) {
 		return;
 
 	//If this page has been resolved, return immediately
-	if (is_page_resolved(kernel_proc, vaddr))
-		return;
+	//if (is_page_resolved(kernel_proc, vaddr)) return;
 
 	DECAF_read_mem(env, gkpcr + KDVB_OFFSET, 4, &kdvb);
 	DECAF_read_mem(env, kdvb + PSLM_OFFSET, 4, &psLM);
@@ -306,7 +304,7 @@ static void update_kernel_modules(CPUState *env, target_ulong vaddr) {
 		uint32_t base = 0;
 		DECAF_read_mem(env,
 				curr_mod + handle_funds[GuestOS_index].offset->DLLBASE_OFFSET,
-				4, &base); // dllbase  DLLBASE_OFFSET
+				4, &base);
 
 		if (is_page_resolved(kernel_proc, base))
 			goto next;
@@ -314,9 +312,11 @@ static void update_kernel_modules(CPUState *env, target_ulong vaddr) {
 
 		char name[512];
 		char key[512];
+		char *base_name;
 
 		readustr_with_cr3(curr_mod + handle_funds[GuestOS_index].offset->DLLNAME_OFFSET,
 				0, name, env);
+		base_name = get_basename(name);
 
 		//We get checksum and use base module name along with checksum as the key to
 		//uniquely identify a module.
@@ -325,7 +325,7 @@ static void update_kernel_modules(CPUState *env, target_ulong vaddr) {
 		if(get_IMAGE_NT_HEADERS(env->cr[3], base, &nth) < 0)
 			goto next;
 
-		snprintf(key, sizeof(key)-1, "%s:%08x", name, nth.OptionalHeader.CheckSum);
+		snprintf(key, sizeof(key)-1, "%s:%08x", base_name, nth.OptionalHeader.CheckSum);
 		//See if we have extracted detailed info about this module
 		curr_entry = findModule(key);
 		if (!curr_entry) {
@@ -334,8 +334,9 @@ static void update_kernel_modules(CPUState *env, target_ulong vaddr) {
 					curr_mod + handle_funds[GuestOS_index].offset->SIZE_OFFSET,
 					4, &curr_entry->size); // dllsize  SIZE_OFFSET
 
-			strncpy(curr_entry->name, name, sizeof(curr_entry->name)-1);
+			strncpy(curr_entry->name, base_name, sizeof(curr_entry->name)-1);
 			readustr_with_cr3(curr_mod + 0x24, 0, curr_entry->fullname, env);
+			addModule(curr_entry, key);
 		}
 
 		procmod_insert_modinfoV(kernel_proc->pid, base, curr_entry);
@@ -352,6 +353,7 @@ next:
 		}
 		curr_mod = next_mod;
 	}
+
 }
 
 static void update_loaded_user_mods_with_peb(CPUState* env, process *proc,
@@ -363,11 +365,9 @@ static void update_loaded_user_mods_with_peb(CPUState* env, process *proc,
 
 	if (peb == 0x00) return;
 
-	if (is_page_resolved(proc, vaddr))	return;
-
-	DECAF_read_mem_with_pgd(env, cr3, peb + 0xc, 4, &ldr);
+	DECAF_read_mem(env, peb + 0xc, 4, &ldr);
 	memlist = ldr + 0xc;
-	DECAF_read_mem_with_pgd(env, cr3, memlist, 4, &first_dll);
+	DECAF_read_mem(env, memlist, 4, &first_dll);
 
 	if (first_dll == 0)	return;
 
@@ -376,15 +376,14 @@ static void update_loaded_user_mods_with_peb(CPUState* env, process *proc,
 		IMAGE_NT_HEADERS nth;
 		count++;
 		uint32_t base = 0; //, size = 0;
-		if (DECAF_read_mem_with_pgd(env, cr3, curr_dll + 0x18, 4, &base) < 0)
+		if (DECAF_read_mem(env, curr_dll + 0x18, 4, &base) < 0)
 			break;
 
-		//FIXME: why do we check base > 0x00300000?
-		if (base > 0x00300000 && !is_page_resolved(proc, base)) {
+		if (!is_page_resolved(proc, base)) {
 			char name[512];
 			char key[512];
 
-			readustr_with_cr3(curr_dll + 0x2c, cr3, name, env);
+			readustr_with_cr3(curr_dll + 0x2c, 0, name, env);
 
 			//We get checksum and use base module name along with checksum as the key to
 			//uniquely identify a module.
@@ -399,19 +398,22 @@ static void update_loaded_user_mods_with_peb(CPUState* env, process *proc,
 
 			if(!curr_entry) { //We haven't seen this module before, even in other process memory spaces
 				curr_entry = new module();
-				readustr_with_cr3(curr_dll + 0x24, cr3, curr_entry->fullname, env);
-				DECAF_read_mem_with_pgd(env, cr3, curr_dll + 0x20, 4, &curr_entry->size);
+				readustr_with_cr3(curr_dll + 0x24, 0, curr_entry->fullname, env);
+				DECAF_read_mem(env, curr_dll + 0x20, 4, &curr_entry->size);
 				strncpy(curr_entry->name, name, sizeof(curr_entry->name)-1);
+				addModule(curr_entry, key);
 			}
 
 			procmod_insert_modinfoV(proc->pid, base, curr_entry);
 			message_m(proc->pid, cr3, base, curr_entry);
+
 		}
 
 next:
 		//read the next DLL
-		DECAF_read_mem_with_pgd(env, cr3, curr_dll, 4, &curr_dll);
+		DECAF_read_mem(env, curr_dll, 4, &curr_dll);
 	} while (curr_dll != 0 && curr_dll != first_dll && count < MAX);
+
 }
 
 static void extract_export_table(IMAGE_NT_HEADERS *nth, uint32_t cr3, uint32_t base, module *mod)
@@ -427,7 +429,7 @@ static void extract_export_table(IMAGE_NT_HEADERS *nth, uint32_t cr3, uint32_t b
 	edt_va = nth->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
 	edt_size = nth->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].Size;
 
-	if(DECAF_read_mem_with_pgd(env, cr3, base + edt_va, sizeof(ied), &ied) < 0) {
+	if(DECAF_read_mem(env, base + edt_va, sizeof(ied), &ied) < 0) {
 		//monitor_printf(default_mon, "Unable to read exp dir from image: mod=%s:%d base=%08x, va=%08x.\n", mod->name, ver, base, edt_va);
 		//DECAF_stop_vm();
 		goto done;
@@ -444,17 +446,17 @@ static void extract_export_table(IMAGE_NT_HEADERS *nth, uint32_t cr3, uint32_t b
 	if(!func_addrs || !name_addrs || !ordinals)
 		goto done;
 
-	if(DECAF_read_mem_with_pgd(env, cr3, base + ied.AddressOfFunctions,
+	if(DECAF_read_mem(env, base + ied.AddressOfFunctions,
 			sizeof(DWORD) * ied.NumberOfFunctions, func_addrs) < 0) {
 		goto done;
 	}
 
-	if(DECAF_read_mem_with_pgd(env, cr3, base + ied.AddressOfNames,
+	if(DECAF_read_mem(env, base + ied.AddressOfNames,
 			sizeof(DWORD) * ied.NumberOfNames, name_addrs) < 0) {
 		goto done;
 	}
 
-	if(DECAF_read_mem_with_pgd(env, cr3, base + ied.AddressOfNameOrdinals,
+	if(DECAF_read_mem(env, base + ied.AddressOfNameOrdinals,
 			sizeof(WORD) * ied.NumberOfNames, ordinals) < 0) {
 		goto done;
 	}
@@ -464,7 +466,7 @@ static void extract_export_table(IMAGE_NT_HEADERS *nth, uint32_t cr3, uint32_t b
 		if(index >= ied.NumberOfFunctions)
 			continue;
 
-		DECAF_read_mem_with_pgd(env, cr3, base + name_addrs[i], sizeof(name)-1, name);
+		DECAF_read_mem(env, base + name_addrs[i], sizeof(name)-1, name);
 		name[127] = 0;
 		snprintf(msg, sizeof(msg)-1, "F %s %s %08x\n", mod->name, name, func_addrs[index]);
 		handle_guest_message(msg);
@@ -508,22 +510,12 @@ static void retrieve_missing_symbols(process *proc)
 
 	for(; iter!=proc->module_list.end(); iter++) {
 		module *cur_mod = iter->second;
-		if(cur_mod->symbols_extracted) continue;
-
-		extract_PE_info(proc->cr3, iter->first, cur_mod);
-
-		if(cur_mod->symbols_extracted) {
-			//Now the symbols in this module have been extracted.
-			//Add this module into our module map, so we don't need to extract again.
-			char key[512];
-			snprintf(key, sizeof(key)-1, "%s:%08x", cur_mod->name, cur_mod->checksum);
-			addModule(cur_mod, key);
-		}
-
+		if(!cur_mod->symbols_extracted)
+			extract_PE_info(proc->cr3, iter->first, cur_mod);
 	}
 }
 
-static void get_new_modules(CPUState* env, process * proc, target_ulong vaddr)
+static inline void get_new_modules(CPUState* env, process * proc, target_ulong vaddr)
 {
 	uint32_t base = 0, self = 0, pid = 0;
 	if (proc == kernel_proc) {
@@ -556,30 +548,22 @@ static void tlb_call_back(DECAF_Callback_Params *temp) {
 		kernel_proc->cr3 = cr3;
 	} else {
 		proc = findProcessByCR3(cr3);
-		if (proc == NULL) {
-#if 0
-			//If we haven't found system process, do it now.
-			if (system_proc == NULL) {
-				system_proc = find_new_process(env, cr3);
-				if(system_proc == NULL || strcasecmp(system_proc->name, "System")) {
-					monitor_printf(default_mon,
-							"System proc not found!!!\n");
-					abort();
-				}
-
-				//update_kernel_modules(env, vaddr);
-
-				proc = system_proc;
-			} else {
-#endif
+		if (proc == NULL)
 			proc = find_new_process(env, cr3);
-		}
 	}
 
-	//getting_new_mods++;
-	//monitor_printf(default_mon,"%d\n", getting_new_mods++);
-	if (proc) {
-		get_new_modules(env, proc, vaddr);
+	if (proc ) {
+		if (!is_page_resolved(proc, vaddr))
+			get_new_modules(env, proc, vaddr);
+
+		if (!is_page_resolved(proc, vaddr)) {
+			if (proc->pending_pages.find(vaddr>>12) == proc->pending_pages.end())
+				proc->pending_pages.insert(vaddr>>12);
+			else {
+				proc->pending_pages.erase(vaddr>>12);
+				proc->resolved_pages.insert(vaddr>>12);
+			}
+		}
 		retrieve_missing_symbols(proc);
 	}
 }
@@ -664,7 +648,8 @@ found:
 	return ntoskrnl_base;
 }
 
-static void probe_windows(CPUState *env)
+/*FIXME: Supports only 32bit guest. */
+static uint32_t probe_windows(CPUState *env)
 {
 	uint32_t base;
 
@@ -676,11 +661,15 @@ static void probe_windows(CPUState *env)
 
 			get_os_version(env);
 			base = get_ntoskrnl(env);
+			monitor_printf(default_mon,
+					"The base address of ntoskrnl.exe is %08x\n", base);
 			if (!base) {
 				monitor_printf(default_mon,
 						"Unable to locate kernel base. Stopping VM...\n");
 				//vm_stop(RUN_STATE_DEBUG);
-				return;
+				return 0;
+			} else {
+				return base;
 			}
 		}
 	}
@@ -737,10 +726,9 @@ void check_procexit(void *) {
 			if (proc->parent_pid == 0)
 				continue;
 			//0x78 for xp, 0x88 for win7
-			cpu_memory_rw_debug(env,
-					(proc->EPROC_base_addr)
+			DECAF_read_mem(env, (proc->EPROC_base_addr)
 							+ handle_funds[GuestOS_index].offset->PEXIT_TIME,
-					(uint8_t *) &end_time[0], 8, 0);
+							8,  end_time);
 			if (end_time[0] | end_time[1]) {
 
 				removeProcV(proc->pid);

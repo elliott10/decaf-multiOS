@@ -83,8 +83,11 @@ static unordered_map < uint32_t, process_info_t * >process_map;
 //map pid to process_info_t
 static unordered_map < uint32_t, process_info_t * >process_pid_map;
 
+extern FILE *guestlog;
+
 void handle_guest_message(const char *message)
 {
+	//fprintf(guestlog, "%s\n", message);
         switch (message[0]) {
         case 'P':
                 parse_process(message);
@@ -254,33 +257,43 @@ int procmod_createproc(uint32_t pid, uint32_t parent_pid,
 
 int procmod_removeproc(uint32_t pid)
 {
-  procmod_Callback_Params params;
+	procmod_Callback_Params params;
 
-  params.rp.pid = pid;
+	params.rp.pid = pid;
 
-  SimpleCallback_dispatch(&procmod_callbacks[PROCMOD_REMOVEPROC_CB], &params);
+	SimpleCallback_dispatch(&procmod_callbacks[PROCMOD_REMOVEPROC_CB], &params);
 
-  //  if (removeproc_notify)
-//	removeproc_notify(pid);
+	unordered_map < uint32_t, process_info_t * >::iterator iter =
+			process_pid_map.find(pid);
+	if (iter == process_pid_map.end())	//pid not found
+		return -1;
 
-    unordered_map < uint32_t, process_info_t * >::iterator iter =
-	process_pid_map.find(pid);
-    if (iter == process_pid_map.end())	//pid not found
-	return -1;
+	process_info_t *proc = iter->second;
+	module_info_t *mod;
 
-    process_info_t *proc = iter->second;
-    module_info_t *mod;
+	while (!proc->module_list.empty()) {
+		mod = proc->module_list.front();
+		proc->module_list.pop_front();
+		delete mod;
+	}
 
-    while (!proc->module_list.empty()) {
-	mod = proc->module_list.front();
-	proc->module_list.pop_front();
-	delete mod;
-    }
+	process_pid_map.erase(iter);
+	process_map.erase(proc->cr3);
+	delete proc;
+	return 0;
+}
 
-    process_pid_map.erase(iter);
-    process_map.erase(proc->cr3);
-    delete proc;
-    return 0;
+int procmod_update_name(uint32_t pid, char *name)
+{
+	unordered_map < uint32_t, process_info_t * >::iterator iter =
+			process_pid_map.find(pid);
+	if (iter == process_pid_map.end())	//pid not found
+		return -1;
+
+	process_info_t *proc = iter->second;
+	proc->name = name;
+
+	return 0;
 }
 
 
@@ -307,7 +320,7 @@ static int procmod_remove_all()
     return 0;
 }
 
-
+#if 0
 void update_proc(void *opaque)
 {
 //    long taskaddr = 0xC033C300; 
@@ -365,7 +378,7 @@ void update_proc(void *opaque)
     } while (nextaddr != taskaddr);
 
 }
-
+#endif
 
 void procmod_cleanup()
 {
@@ -559,7 +572,7 @@ void list_procs(Monitor *mon) // AWH void)
     }
 }
 
-
+#if 0
 void linux_ps(Monitor *mon, int mmap_flag)
 {
     int pid;
@@ -600,7 +613,7 @@ monitor_printf(mon, "linux_ps() -> After update_proc(0)\n"); // AWH
 
     } while (nextaddr != taskaddr);
 }
-
+#endif
 
 uint32_t find_cr3(uint32_t pid)
 {
@@ -821,10 +834,12 @@ int procmod_init()
 		fclose(guestlog);
 	}
 
+#if 0
     //TODO: save and load thread information
 
     if (init_kernel_offsets() >= 0)
     	hookapi_hook_function(1, hookingpoint, 0, update_proc, NULL, 0);
+#endif
 
     // AWH - Added NULL parm for DeviceState* (change in API)
     register_savevm(NULL, "procmod", 0, 1, procmod_save, procmod_load, NULL);
@@ -858,8 +873,13 @@ void parse_process(const char *log)
 			procmod_createproc(pid, parent_pid, cr3, name);
 		else
 			procmod_createproc(pid, parent_pid, -1, "");
-
 		break;
+	case '^':
+		procmod_update_name(pid, name);
+		break;
+	default:
+
+		abort();
 	}
 }
 

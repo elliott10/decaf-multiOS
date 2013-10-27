@@ -479,7 +479,7 @@ enum {
 };
 
 /* global register indices */
-static TCGv_ptr cpu_env;
+/* AWH static */ TCGv_ptr cpu_env;
 static TCGv cpu_gpr[32], cpu_PC;
 static TCGv cpu_HI[MIPS_DSP_ACC], cpu_LO[MIPS_DSP_ACC], cpu_ACX[MIPS_DSP_ACC];
 static TCGv cpu_dspctrl, btarget, bcond;

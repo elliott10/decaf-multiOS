@@ -34,8 +34,13 @@ extern "C" {
 
 static inline uint64_t taintcheck_register_check(int regid,int offset,int size,CPUState *env){
 	int off = offset*8;
+#if defined(TARGET_MIPS)
+    return (size < 4) ? (env->active_tc.taint_regs[regid]>>off)
+        &size_to_mask(size):env->active_tc.taint_regs[regid]>>off;
+#else
     return (size < 4) ? (env->taint_regs[regid]>>off)&size_to_mask(size):
     		env->taint_regs[regid]>>off;
+#endif /* CONFIG_MIPS */
 }
 /*
 addr: physical addr
@@ -63,7 +68,7 @@ static inline int taint_mem(uint32_t addr,int size,uint8_t *taint)
 	    taint_memory_page_table[middle_node_index]->leaf[leaf_node_index]=fetch_leaf_node_from_pool();
 	    leaf_node=taint_memory_page_table[middle_node_index]->leaf[leaf_node_index];
           }
-          leaf_node->bitmap[(addr+i)&LEAF_ADDRESS_MASK]=((uint8_t*)(taint+i));
+          leaf_node->bitmap[(addr+i)&LEAF_ADDRESS_MASK]=taint[i];
         }    
 	return 1;
 }

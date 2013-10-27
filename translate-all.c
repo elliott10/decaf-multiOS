@@ -82,6 +82,9 @@ int cpu_gen_code(CPUState *env, TranslationBlock *tb, int *gen_code_size_ptr)
     if (taint_tracking_enabled)
         clean_shadow_arg();
 #endif /* CONFIG_TCG_TAINT */
+#ifdef CONFIG_TCG_IR_LOG
+    tb->DECAF_logged = 0; /* AWH - Generating new code, so this TB isn't on disk */
+#endif /* CONFIG_TCG_IR_LOG */
     gen_intermediate_code(env, tb);
 
     /* generate machine code */
@@ -141,6 +144,9 @@ int cpu_restore_state(TranslationBlock *tb,
     if (taint_tracking_enabled)
         clean_shadow_arg();
 #endif /* CONFIG_TCG_TAINT */
+#ifdef CONFIG_TCG_IR_LOG
+    tb->DECAF_logged = 0; /* AWH - Generating new code, so this TB isn't on disk */
+#endif /* CONFIG_TCG_IR_LOG */
     gen_intermediate_code_pc(env, tb);
 
     if (use_icount) {

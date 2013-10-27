@@ -1,3 +1,9 @@
+#if defined(__SSE__)
+#include <xmmintrin.h>
+#define SPIN_DELAY _mm_pause();
+#else
+#define SPIN_DELAY __asm__ __volatile__ ("pause");
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -8,10 +14,16 @@
 #include "helper.h" // AWH
 
 /* The buffered internal analysis log */
-#define MAX_LOG_ENTRIES 512
 static uint8_t temp_liveness[TCG_MAX_TEMPS];
-static analysis_log_entry_t analysisLog[MAX_LOG_ENTRIES];
-static uint32_t logSize = 0;
+analysis_log_entry_t *analysis_log = NULL;
+static uint32_t writer_current_block = 0;
+static uint32_t writer_current_index = 0;
+static uint16_t current_reader_writer_offset = 0;
+static uint32_t reader_current_block = 0;
+static uint16_t reader_current_index = 0;
+static uint32_t log_initialized = 0;
+static volatile int block_lock[MAX_LOG_BLOCKS];
+static int i = 0;
 
 /* These are our concrete global registers */
 #if defined(TARGET_X86_64)
@@ -20,9 +32,60 @@ static uint64_t cpu_regs[16];
 static uint32_t cpu_regs[8]; 
 #elif defined(TARGET_ARM)
 static uint32_t cpu_regs[16];
+#elif defined(TARGET_MIPS)
+static uint32_t cpu_regs[32];
 #else
 #error Unknown target
 #endif
+
+static inline void log_spin_lock(int lock) {
+  if (lock >= MAX_LOG_BLOCKS) lock = 0;
+  while (!__sync_bool_compare_and_swap((block_lock + lock), 0, 1))
+    while(block_lock[lock]) SPIN_DELAY
+}
+
+static inline void log_spin_unlock(int lock) {
+  asm volatile ("");
+  block_lock[lock] = 0;
+}
+
+void initialize_taint_log(void) {
+  if (!log_initialized) {
+    log_initialized = 1;
+    if (analysis_log) free(analysis_log);
+    analysis_log = (analysis_log_entry_t *)calloc(sizeof(analysis_log_entry_t), MAX_LOG_ENTRIES_PER_BLOCK * MAX_LOG_BLOCKS);
+    writer_current_block = writer_current_index = 0;
+    reader_current_block = reader_current_index = 0;
+    
+    for (i = 0; i < MAX_LOG_BLOCKS; i++)
+      block_lock[i] = 0;
+
+    /* Start with the writer locking block 0 */
+    log_spin_lock(0);
+
+    /* TODO: Start reader thread */
+  }
+}
+
+static inline change_lock(uint32_t volatile current_block) {
+  /* Release the lock on this block */
+  log_spin_unlock(writer_current_block >> 16);
+
+  /* Change to the next block */
+  writer_current_block += MAX_LOG_ENTRIES_PER_BLOCK;
+  if (writer_current_block > (MAX_LOG_ENTRIES_PER_BLOCK * MAX_LOG_BLOCKS))
+    writer_current_block = 0;
+      
+  /* Lock the current block */
+  log_spin_lock(writer_current_block >> 16);
+}
+ 
+static inline insert_record0(uint32_t op) {
+  analysis_log[writer_current_block + writer_current_index++].op = op;
+
+  /* Have we reached the end of the current block (integer wrap)? */
+  if (!writer_current_index) change_lock(writer_current_index);
+}
 
 void helper_taint_event1_32(uint32_t op, uint32_t arg0) {}
 void helper_taint_event1_64(uint32_t op, uint64_t arg0) {}
@@ -57,6 +120,7 @@ void helper_taint_event4_64(uint32_t op, uint64_t arg0, uint64_t arg1, uint64_t 
 
 void helper_taint_event5_32(uint32_t op, uint32_t arg0, uint32_t arg1,
   uint32_t arg2, uint32_t arg3, uint32_t arg4) {
+#if 0
   assert(logSize < MAX_LOG_ENTRIES);
   analysisLog[logSize].op = op;
   analysisLog[logSize].arg[0] = arg0;
@@ -64,10 +128,12 @@ void helper_taint_event5_32(uint32_t op, uint32_t arg0, uint32_t arg1,
   analysisLog[logSize].arg[2] = arg2;
   analysisLog[logSize].arg[3] = arg3;
   analysisLog[logSize].arg[4] = arg4;
+#endif
 }
 
 void helper_taint_event5_64(uint32_t op, uint64_t arg0, uint64_t arg1,
   uint64_t arg2, uint64_t arg3, uint64_t arg4) {
+#if 0 
   assert(logSize < MAX_LOG_ENTRIES);
   analysisLog[logSize].op = op;
   analysisLog[logSize].arg[0] = arg0;
@@ -75,9 +141,11 @@ void helper_taint_event5_64(uint32_t op, uint64_t arg0, uint64_t arg1,
   analysisLog[logSize].arg[2] = arg2;
   analysisLog[logSize].arg[3] = arg3;
   analysisLog[logSize].arg[4] = arg4;
+#endif
 }
 
 void DECAF_block_begin_for_analysis(void) {
+#if 0
   int32_t currentIndex;
   if (logSize == 0) return;
   /* Each temp is alive or dead.  Alive temps are a concrete
@@ -92,158 +160,168 @@ void DECAF_block_begin_for_analysis(void) {
     }
     currentIndex--;
   }
+#endif
+}
+void helper_taint_log_pointer(uint32_t pointer,uint32_t taint_value)
+{
+	if(taint_value!=0)
+		fprintf(stderr,"0x%08x   0x%08x \n",pointer,taint_value);
 }
 
-void helper_taint_log_deposit_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t reg4, uint32_t reg5, uint32_t taint1, uint32_t taint2, uint32_t taint3) {
- fprintf(stderr, "log: deposit_i32()");
+void helper_taint_log_deposit_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t reg4, uint32_t reg5, uint32_t taint2, uint32_t taint3) {
+ //fprintf(stderr, "log: deposit_i32()\n");
 }
 
-void helper_taint_log_setcond2_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t reg4, uint32_t reg5, uint32_t reg6, uint32_t taint1, uint32_t taint2, uint32_t taint3, uint32_t taint4, uint32_t taint5) {
- fprintf(stderr, "log: setcond2_i32()");
+void helper_taint_log_setcond2_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t reg4, uint32_t reg5, uint32_t reg6, uint32_t taint2, uint32_t taint3, uint32_t taint4, uint32_t taint5) {
+ //fprintf(stderr, "log: setcond2_i32()\n");
 }
 
-void helper_taint_log_movi_i32(uint32_t reg1, uint32_t taint1) {
- fprintf(stderr, "log: movi_i32(%d:%d, 0)\n", reg1, taint1);
+void helper_taint_log_movi_i32(uint32_t reg1) {
+  insert_record0(INDEX_op_movi_i32);
+ //fprintf(stderr, "log: movi_i32(%d, 0)\n", reg1);
 }
 
-void helper_taint_log_mov_i32(uint32_t reg1, uint32_t reg2, uint32_t taint1, uint32_t taint2) {
-  fprintf(stderr, "log: mov_i32(%d:%d, %d:%d)\n", reg1, taint1, reg2, taint2);
+void helper_taint_log_mov_i32(uint32_t reg1, uint32_t reg2, uint32_t taint2) {
+  insert_record0(INDEX_op_mov_i32);
+//  fprintf(stderr, "log: mov_i32(%d, %d:%d)\n", reg1, reg2, taint2);
 }
 
+// No LHS change yet
 void helper_taint_log_qemu_ld(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint1, uint32_t taint2, uint32_t id) {
- fprintf(stderr, "log: qemu_ld()");
+ //fprintf(stderr, "log: qemu_ld()\n");
 }
 
+// No LHS change yet
 void helper_taint_log_qemu_st(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint1, uint32_t taint2, uint32_t id) {
- fprintf(stderr, "log: qemu_st()");
+ //fprintf(stderr, "log: qemu_st()");
 }
 
-void helper_taint_log_setcond_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t reg4, uint32_t taint1, uint32_t taint2, uint32_t taint3) {
- fprintf(stderr, "log: setcond_i32()");
+void helper_taint_log_setcond_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t reg4, uint32_t taint2, uint32_t taint3) {
+ //fprintf(stderr, "log: setcond_i32()");
 }
 
-void helper_taint_log_shl_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint1, uint32_t taint2, uint32_t taint3) {
- fprintf(stderr, "log: shl_i32()");
+void helper_taint_log_shl_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint2, uint32_t taint3) {
+ //fprintf(stderr, "log: shl_i32()\n");
 }
 
-void helper_taint_log_shr_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint1, uint32_t taint2, uint32_t taint3) {
- fprintf(stderr, "log: shr_i32()");
+void helper_taint_log_shr_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint2, uint32_t taint3) {
+ //fprintf(stderr, "log: shr_i32()\n");
 }
 
-void helper_taint_log_sar_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint1, uint32_t taint2, uint32_t taint3) {
- fprintf(stderr, "log: sar_i32()");
+void helper_taint_log_sar_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint2, uint32_t taint3) {
+ //fprintf(stderr, "log: sar_i32()\n");
 }
 
 #if TCG_TARGET_HAS_rot_i32
-void helper_taint_log_rotl_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint1, uint32_t taint2, uint32_t taint3) {
- fprintf(stderr, "log: rotl_i32()");
+void helper_taint_log_rotl_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint2, uint32_t taint3) {
+ //fprintf(stderr, "log: rotl_i32()\n");
 }
 
-void helper_taint_log_rotr_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint1, uint32_t taint2, uint32_t taint3) {
- fprintf(stderr, "log: rotr_i32()");
+void helper_taint_log_rotr_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint2, uint32_t taint3) {
+ //fprintf(stderr, "log: rotr_i32()\n");
 }
 #endif /* TCG_TARGET_HAS_rot_i32 */
 
-void helper_taint_log_add_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint1, uint32_t taint2, uint32_t taint3) {
- fprintf(stderr, "log: add_i32()");
+void helper_taint_log_add_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint2, uint32_t taint3) {
+ //fprintf(stderr, "log: add_i32()\n");
 }
 
-void helper_taint_log_sub_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint1, uint32_t taint2, uint32_t taint3) {
- fprintf(stderr, "log: sub_i32()");
+void helper_taint_log_sub_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint2, uint32_t taint3) {
+ //fprintf(stderr, "log: sub_i32()\n");
 }
 
-void helper_taint_log_mul_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint1, uint32_t taint2, uint32_t taint3) {
- fprintf(stderr, "log: mul_i32()");
+void helper_taint_log_mul_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint2, uint32_t taint3) {
+ //fprintf(stderr, "log: mul_i32()\n");
 }
 
-void helper_taint_log_and_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint1, uint32_t taint2, uint32_t taint3) {
- fprintf(stderr, "log: and_i32()");
+void helper_taint_log_and_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint2, uint32_t taint3) {
+ //fprintf(stderr, "log: and_i32()\n");
 }
 
-void helper_taint_log_or_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint1, uint32_t taint2, uint32_t taint3) {
- fprintf(stderr, "log: or_i32()");
+void helper_taint_log_or_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint2, uint32_t taint3) {
+ //fprintf(stderr, "log: or_i32()\n");
 }
 
-void helper_taint_log_xor_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint1, uint32_t taint2, uint32_t taint3) {
- fprintf(stderr, "log: xor_i32()");
+void helper_taint_log_xor_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint2, uint32_t taint3) {
+ //fprintf(stderr, "log: xor_i32()\n");
 }
 
 #if TCG_TARGET_HAS_div_i32
-void helper_taint_log_div_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint1, uint32_t taint2, uint32_t taint3) {
- fprintf(stderr, "log: div_i32()");
+void helper_taint_log_div_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint2, uint32_t taint3) {
+ //fprintf(stderr, "log: div_i32()\n");
 }
 
-void helper_taint_log_divu_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint1, uint32_t taint2, uint32_t taint3) {
- fprintf(stderr, "log: divu_i32()");
+void helper_taint_log_divu_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint2, uint32_t taint3) {
+ //fprintf(stderr, "log: divu_i32()\n");
 }
 
-void helper_taint_log_rem_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint1, uint32_t taint2, uint32_t taint3) {
- fprintf(stderr, "log: rem_i32()");
+void helper_taint_log_rem_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint2, uint32_t taint3) {
+ //fprintf(stderr, "log: rem_i32()\n");
 }
 
-void helper_taint_log_remu_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint1, uint32_t taint2, uint32_t taint3) {
- fprintf(stderr, "log: remu_i32()");
+void helper_taint_log_remu_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t taint2, uint32_t taint3) {
+ //fprintf(stderr, "log: remu_i32()\n");
 }
 #elif TCG_TARGET_HAS_div2_i32
-void helper_taint_log_div2_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t reg4, uint32_t reg5, uint32_t taint1, uint32_t taint2, uint32_t taint3, uint32_t taint4, uint32_t taint5) {
- fprintf(stderr, "log: div2_i32()");
+void helper_taint_log_div2_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t reg4, uint32_t reg5, uint32_t taint3, uint32_t taint4, uint32_t taint5) {
+ //fprintf(stderr, "log: div2_i32()\n");
 }
 
-void helper_taint_log_divu2_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t reg4, uint32_t reg5, uint32_t taint1, uint32_t taint2, uint32_t taint3, uint32_t taint4, uint32_t taint5) {
- fprintf(stderr, "log: divu2_i32()");
+void helper_taint_log_divu2_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t reg4, uint32_t reg5, uint32_t taint3, uint32_t taint4, uint32_t taint5) {
+ //fprintf(stderr, "log: divu2_i32()\n");
 }
 #endif /* TCG_TARGET_HAS_div2_i32 */
 
-void helper_taint_log_mulu2_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t reg4, uint32_t taint1, uint32_t taint2, uint32_t taint3, uint32_t taint4) {
- fprintf(stderr, "log: mulu2_i32()");
+void helper_taint_log_mulu2_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t reg4, uint32_t taint3, uint32_t taint4) {
+ //fprintf(stderr, "log: mulu2_i32()\n");
 }
 
-void helper_taint_log_add2_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t reg4, uint32_t reg5, uint32_t reg6, uint32_t taint1, uint32_t taint2, uint32_t taint3, uint32_t taint4, uint32_t taint5, uint32_t taint6) {
- fprintf(stderr, "log: add2_i32()");
+void helper_taint_log_add2_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t reg4, uint32_t reg5, uint32_t reg6, uint32_t taint3, uint32_t taint4, uint32_t taint5, uint32_t taint6) {
+ //fprintf(stderr, "log: add2_i32()\n");
 }
 
-void helper_taint_log_sub2_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t reg4, uint32_t reg5, uint32_t reg6, uint32_t taint1, uint32_t taint2, uint32_t taint3, uint32_t taint4, uint32_t taint5, uint32_t taint6) {
- fprintf(stderr, "log: sub2_i32()");
+void helper_taint_log_sub2_i32(uint32_t reg1, uint32_t reg2, uint32_t reg3, uint32_t reg4, uint32_t reg5, uint32_t reg6, uint32_t taint3, uint32_t taint4, uint32_t taint5, uint32_t taint6) {
+ //fprintf(stderr, "log: sub2_i32()\n");
 }
 
 #if TCG_TARGET_HAS_ext8s_i32
-void helper_taint_log_ext8s_i32(uint32_t reg1, uint32_t reg2, uint32_t taint1, uint32_t taint2) {
- fprintf(stderr, "log: ext8s_i32()");
+void helper_taint_log_ext8s_i32(uint32_t reg1, uint32_t reg2, uint32_t taint2) {
+ //fprintf(stderr, "log: ext8s_i32()\n");
 }
 #endif /* TCG_TARGET_HAS_ext8s_i32 */
 #if TCG_TARGET_HAS_ext16s_i32
-void helper_taint_log_ext16s_i32(uint32_t reg1, uint32_t reg2, uint32_t taint1, uint32_t taint2) {
- fprintf(stderr, "log: ext16s_i32()");
+void helper_taint_log_ext16s_i32(uint32_t reg1, uint32_t reg2, uint32_t taint2) {
+ //fprintf(stderr, "log: ext16s_i32()\n");
 }
 #endif /* TCG_TARGET_HAS_ext16s_i32 */
 #if TCG_TARGET_HAS_ext8u_i32
-void helper_taint_log_ext8u_i32(uint32_t reg1, uint32_t reg2, uint32_t taint1, uint32_t taint2) {
- fprintf(stderr, "log: ext8u_i32()");
+void helper_taint_log_ext8u_i32(uint32_t reg1, uint32_t reg2, uint32_t taint2) {
+ //fprintf(stderr, "log: ext8u_i32()\n");
 }
 #endif /* TCG_TARGET_HAS_ext8u_i32 */
 #if TCG_TARGET_HAS_ext16u_i32
-void helper_taint_log_ext16u_i32(uint32_t reg1, uint32_t reg2, uint32_t taint1, uint32_t taint2) {
- fprintf(stderr, "log: ext16u_i32()");
+void helper_taint_log_ext16u_i32(uint32_t reg1, uint32_t reg2, uint32_t taint2) {
+ //fprintf(stderr, "log: ext16u_i32()\n");
 }
 #endif /* TCG_TARGET_HAS_ext16u_i32 */
 #if TCG_TARGET_HAS_bswap16_i32
-void helper_taint_log_bswap16_i32(uint32_t reg1, uint32_t reg2, uint32_t taint1, uint32_t taint2) {
- fprintf(stderr, "log: bswap16_i32()");
+void helper_taint_log_bswap16_i32(uint32_t reg1, uint32_t reg2, uint32_t taint2) {
+ //fprintf(stderr, "log: bswap16_i32()\n");
 }
 #endif /* TCG_TARGET_HAS_bswap16_i32 */
 #if TCG_TARGET_HAS_bswap32_i32
-void helper_taint_log_bswap32_i32(uint32_t reg1, uint32_t reg2, uint32_t taint1, uint32_t taint2) {
- fprintf(stderr, "log: bswap32_i32()");
+void helper_taint_log_bswap32_i32(uint32_t reg1, uint32_t reg2, uint32_t taint2) {
+ //fprintf(stderr, "log: bswap32_i32()\n");
 }
 #endif /* TCG_TARGET_HAS_bswap32_i32 */
 #if TCG_TARGET_HAS_not_i32
-void helper_taint_log_not_i32(uint32_t reg1, uint32_t reg2, uint32_t taint1, uint32_t taint2) {
- fprintf(stderr, "log: not_i32()");
+void helper_taint_log_not_i32(uint32_t reg1, uint32_t reg2, uint32_t taint2) {
+ //fprintf(stderr, "log: not_i32()\n");
 }
 #endif /* TCG_TARGET_HAS_not_i32 */
 #if TCG_TARGET_HAS_neg_i32
-void helper_taint_log_neg_i32(uint32_t reg1, uint32_t reg2, uint32_t taint1, uint32_t taint2) {
- fprintf(stderr, "log: neg_i32()");
+void helper_taint_log_neg_i32(uint32_t reg1, uint32_t reg2, uint32_t taint2) {
+// fprintf(stderr, "log: neg_i32()\n");
 }
 #endif /* TCG_TARGET_HAS_neg_i32 */
 

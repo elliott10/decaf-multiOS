@@ -13,6 +13,10 @@ extern int nb_tcg_sweeps;
 
 extern void clean_shadow_arg(void);
 extern int optimize_taint(int search_pc);
+extern TCGv find_shadow_arg(TCGv arg);
+
+#define METADATA_SIZE 2048
+extern uint8_t gen_opc_opt_immune_metadata[METADATA_SIZE];
 
 #endif /* __DECAF_TCG_TAINT_H__ */
 

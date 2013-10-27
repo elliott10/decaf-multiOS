@@ -198,7 +198,7 @@ extern uint32_t *DECAF_cc_op;
 //Aravind - Function to register cb for range of insns.
 extern void DECAF_register_insn_cb_range(uint32_t start_opcode, uint32_t end_opcode, void (*insn_cb_handler) (uint32_t, uint32_t));
 //Function to cleanup insn_cbs. TODO: Should automatically happen when plugin exits.
-extern void DECAF_cleanup_insn_cbs(void);
+//extern void DECAF_cleanup_insn_cbs(void);
 //end - Aravind
 
 /// \brief Given a virtual address, this function returns the page access status.

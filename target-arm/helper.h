@@ -16,6 +16,11 @@ DEF_HELPER_3(DECAF_invoke_block_end_callback, void, ptr, ptr, tl)
 DEF_HELPER_1(DECAF_invoke_insn_begin_callback, void, ptr)
 DEF_HELPER_1(DECAF_invoke_insn_end_callback, void, ptr)
 
+#ifdef CONFIG_TCG_TAINT
+DEF_HELPER_2(DECAF_invoke_eip_check_callback,void,i32,i32)
+DEF_HELPER_0(DECAF_taint_patch,void)
+#endif /* CONFIG_TCG_TAINT */
+
 DEF_HELPER_1(clz, i32, i32)
 DEF_HELPER_1(sxtb16, i32, i32)
 DEF_HELPER_1(uxtb16, i32, i32)

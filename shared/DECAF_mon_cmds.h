@@ -46,6 +46,16 @@ http://code.google.com/p/decaf-platform/
 	.params		= "pid",
 	.help		= "list the modules of the process with <pid>"
 },
+
+{
+	.name		= "toggle_kvm",
+	.args_type	= "status:b",
+	.mhandler.cmd	= do_toggle_kvm,
+	.params		= "on|off",
+	.help		= "turn kvm on or off at runtime"
+},
+
+#if 0 //To be removed
 {
 	.name		= "linux_ps",
 	.args_type	= "mmap_flag:i?", 
@@ -53,6 +63,8 @@ http://code.google.com/p/decaf-platform/
 	.params		= "[mmap_flag]", 
 	.help		= "list the processes on linux guest system (default: mmap_flag = 1)"
 },
+#endif
+
 #ifdef CONFIG_TCG_TAINT
 /* TCG tainting commands */
 {

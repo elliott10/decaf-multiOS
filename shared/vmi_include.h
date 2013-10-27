@@ -23,7 +23,7 @@ extern "C" {
 //unordered_map < uint32_t, process_info_t * >process_map;
 typedef struct _dmodule{
 char name[32];
-char fullname[128];
+char fullname[256];
 uint32_t base;
 uint32_t size;
 } dmodule;
@@ -46,7 +46,7 @@ extern int get_loaded_modules_countV(uint32_t pid);
 extern void get_proc_modulesV(uint32_t pid, dmodule *buf, int size);
 extern dmodule *locate_moduleV(uint32_t eip, uint32_t cr3);
 extern dmodule *locate_module_bynameV(char *name, uint32_t pid);
-void vmi_init();
+extern void vmi_init();
 #ifdef __cplusplus
 };
 #endif

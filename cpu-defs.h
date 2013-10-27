@@ -154,7 +154,8 @@ typedef struct CPUWatchpoint {
 } CPUWatchpoint;
 
 #ifdef CONFIG_TCG_TAINT
-#define CPU_TEMP_BUF_NLONGS 256
+#define CPU_TEMP_BUF_NLONGS 1024
+// AWH - Was 256
 #else
 #define CPU_TEMP_BUF_NLONGS 128
 #endif /* CONFIG_TCG_TAINT */

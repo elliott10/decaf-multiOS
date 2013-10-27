@@ -21,6 +21,9 @@
 #define _EXEC_ALL_H_
 
 #include "qemu-common.h"
+#ifdef CONFIG_TCG_IR_LOG 
+#include "tcg-target.h" /* AWH - For TCG_TARGET_REG_BITS */
+#endif /* CONFIG_TCG_IR_LOG */
 
 /* allow to see translation results - the slowdown should be negligible, so we leave it */
 #define DEBUG_DISAS
@@ -48,7 +51,7 @@ typedef struct TranslationBlock TranslationBlock;
 #else
 #define MAX_OPC_PARAM_PER_ARG 1
 #endif
-#ifdef CONFIG_TCG_TAINT
+#if 0 //def CONFIG_TCG_TAINT
 /* AWH - We can have a whole bunch of input args to a CALL that
    logs taint information (reg numbers and concrete values). */
 #define MAX_OPC_PARAM_IARGS 10
@@ -62,6 +65,7 @@ typedef struct TranslationBlock TranslationBlock;
  * and up to 4 + N parameters on 64-bit archs
  * (N = number of input arguments + output arguments).  */
 #define MAX_OPC_PARAM (4 + (MAX_OPC_PARAM_PER_ARG * MAX_OPC_PARAM_ARGS))
+
 #ifdef CONFIG_TCG_TAINT
 /* AWH - We need to increase the size of the opcode buffer to be big
   enough to hold all of our added taint IR and logging CALL ops.  But,
@@ -96,14 +100,19 @@ typedef struct TranslationBlock TranslationBlock;
   <- OPC_MAX_SIZE: 432 -><- MAX_OP_PER_INSTR: 5968 ->
 */
 #define OPC_BUF_SIZE 6400
-#define MAX_OP_PER_INSTR (OPC_BUF_SIZE - 640 + 208)
 #else
 /* XXX: make safe guess about sizes */
-#define MAX_OP_PER_INSTR 208
 #define OPC_BUF_SIZE 640
 #endif /* CONFIG_TCG_TAINT */
+#define MAX_OP_PER_INSTR (OPC_BUF_SIZE - 208)
+/* AWH - We want to reduce the number of IR ops that are generated in
+   a single TB to reduce the number of IRs that we have to store if we
+   are storing the IRs for a plugin to examine later. */
+#ifdef CONFIG_TCG_IR_LOG
+#define OPC_MAX_SIZE 200
+#else
 #define OPC_MAX_SIZE (OPC_BUF_SIZE - MAX_OP_PER_INSTR)
-
+#endif /* CONFIG_TCG_IR_LOG */
 /* Maximum size a TCG op can expand to.  This is complicated because a
    single op may require several host instructions and register reloads.
    For now take a wild guess at 192 bytes, which should allow at least
@@ -201,6 +210,18 @@ struct TranslationBlock {
     struct TranslationBlock *jmp_next[2];
     struct TranslationBlock *jmp_first;
     uint32_t icount;
+#ifdef CONFIG_TCG_IR_LOG
+    uint8_t DECAF_logged; /* AWH - Has this been logged to disk? */
+    uint16_t *DECAF_gen_opc_buf; /* AWH - IR ops in this TB */
+#if TCG_TARGET_REG_BITS == 32
+    uint32_t *DECAF_gen_opparam_buf; /* AWH - IR parms in this TB */
+#else
+    uint64_t *DECAF_gen_opparam_buf; /* AWH - IR parms in this TB */
+#endif /* TCG_TARGET_REG_BITS */
+    uint32_t DECAF_num_opc;
+    uint32_t DECAF_num_opparam;
+    unsigned long DECAF_tb_id; /* AWH - offset of this in "tbs" (exec.c) */
+#endif /* CONFIG_TCG_IR_LOG */
 };
 
 static inline unsigned int tb_jmp_cache_hash_page(target_ulong pc)

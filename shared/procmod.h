@@ -158,7 +158,7 @@ extern uint32_t find_pid_by_name(const char* proc_name);
 
 extern void list_procs(Monitor *mon); // AWH void);
 //extern void do_linux_ps(Monitor *mon); // AWH void);
-extern void linux_ps(Monitor *mon, int mmap_flag);
+//extern void linux_ps(Monitor *mon, int mmap_flag);
 extern void list_guest_modules(Monitor *mon, uint32_t pid);
 
 void parse_process(const char *log);

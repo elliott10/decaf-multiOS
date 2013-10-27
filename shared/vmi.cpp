@@ -69,7 +69,7 @@ static os_handle_c handle_funds_c[] = {
 		{ WIN7_SP0_C, &find_win7sp0, &win_vmi_init, },
 		{ WIN7_SP1_C, &find_win7sp1, &win_vmi_init, },
 #endif
-		//{ LINUX_2_6_C, &find_linux, &linux_vmi_init,},
+		{ LINUX_GENERIC_C, &find_linux, &linux_vmi_init,},
 };
 
 
@@ -203,6 +203,7 @@ int procmod_insert_modinfoV(uint32_t pid, uint32_t base, module *mod) {
 	//We also need to removed the previous modules if they happen to sit on the same region
 	for (uint32_t vaddr = base; vaddr < base + mod->size; vaddr += 4096) {
 		proc->resolved_pages.insert(vaddr >> 12);
+		proc->pending_pages.erase(vaddr >> 12);
 		proc->module_list.erase(vaddr);
 	}
 
@@ -486,27 +487,43 @@ dprocess *find_all_processes_infoV(size_t * num_proc)
 
 static void block_end_cb(DECAF_Callback_Params* temp)
 {
-    int i=0;
-    int cflag=0;
-	for(i=0; i<sizeof(handle_funds_c)/sizeof(handle_funds_c[0]); i++)
+    static long long count_out = 0x8000000000L;	// detection fails after 1000 basic blocks
+    int found_guest_os = 0;
+
+    // Probing guest OS for every basic block is too expensive and wasteful.
+    // Let's just do it once every 256 basic blocks
+    if ((count_out & 0xff) != 0)
+    	goto _skip_probe;
+
+	for(int i=0; i<sizeof(handle_funds_c)/sizeof(handle_funds_c[0]); i++)
 	{
-		if(handle_funds_c[i].find(temp->ie.env,insn_handle_c)==1)
+		if(handle_funds_c[i].find(temp->ie.env, insn_handle_c) == 1)
 		{
-			GuestOS_index_c=i;
-			cflag=1;
+			GuestOS_index_c = i;
+			found_guest_os = 1;
 		}
 	}
-	if(GuestOS_index_c == 0||GuestOS_index_c == 1)
-		monitor_printf(default_mon, "its win xp \n");
-	else if(GuestOS_index_c == 2||GuestOS_index_c == 3)
-		monitor_printf(default_mon, "its win 7 \n");
-	//else if(GuestOS_index_c == 4)
-	//	monitor_printf(default_mon, "its linux \n");
 
-	if(cflag)
+#ifdef TARGET_I386
+	if(GuestOS_index_c == 0 || GuestOS_index_c == 1)
+		monitor_printf(default_mon, "its win xp \n");
+	else if(GuestOS_index_c == 2 || GuestOS_index_c == 3)
+		monitor_printf(default_mon, "its win 7 \n");
+	else if(GuestOS_index_c == 4)
+		monitor_printf(default_mon, "its linux \n");
+#endif
+
+	if(found_guest_os)
 	{
-		DECAF_unregister_callback(DECAF_BLOCK_END_CB, insn_handle_c);
+		DECAF_unregister_callback(DECAF_TLB_EXEC_CB, insn_handle_c);
 		handle_funds_c[GuestOS_index_c].init();
+	}
+
+_skip_probe:
+
+	if (count_out-- <= 0)	{// does not find
+		DECAF_unregister_callback(DECAF_TLB_EXEC_CB, insn_handle_c);
+		monitor_printf(default_mon, "oops! guest OS type cannot be decided. \n");
 	}
 }
 
@@ -534,6 +551,17 @@ process * findProcessByCR3(uint32_t cr3)
 	return NULL;
 }
 
+
+process *findProcessByPid(uint32_t pid)
+{
+	unordered_map < uint32_t, process * >::iterator iter =
+		process_pid_map.find(pid);
+
+	if (iter == process_pid_map.end())
+		return NULL; 
+
+	return iter->second;
+}
 
 int findCr3(uint32_t cr3){
 	unordered_set<uint32_t>::const_iterator got = cr3s.find (cr3);
@@ -603,7 +631,8 @@ module* findModule(char *key)
 void vmi_init()
 {
 	monitor_printf(default_mon, "inside vmi init \n");
-	insn_handle_c = DECAF_register_callback(DECAF_BLOCK_END_CB, block_end_cb, NULL);
+	//insn_handle_c = DECAF_register_callback(DECAF_BLOCK_END_CB, block_end_cb, NULL);
+	insn_handle_c = DECAF_register_callback(DECAF_TLB_EXEC_CB, block_end_cb, NULL);
 }
 
 #endif

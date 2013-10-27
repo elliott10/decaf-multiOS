@@ -19,6 +19,8 @@ http://code.google.com/p/decaf-platform/
  *
  *  Created on: June 7, 2013
  *      Author: Heng Yin
+ *  Updated on: Sept 11, 2013
+ *          by: Kevin Wang
  */
 
 
@@ -30,8 +32,12 @@ http://code.google.com/p/decaf-platform/
 extern "C" {
 #endif
 
-void Linux_vmi_init();
-//void tlb_call_back(DECAF_Callback_Params *temp);
+#define guestOS_THREAD_SIZE 8192
+
+#define SIZEOF_COMM 16
+
+int find_linux(CPUState *env, uintptr_t insn_handle);
+void linux_vmi_init();
 
 #ifdef __cplusplus
 };

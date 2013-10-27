@@ -3409,3 +3409,8 @@ FOP_COND_PS(le,  float32_le(fst0, fst1, &env->active_fpu.fp_status),
                  float32_le(fsth0, fsth1, &env->active_fpu.fp_status))
 FOP_COND_PS(ngt, float32_unordered(fst1, fst0, &env->active_fpu.fp_status)    || float32_le(fst0, fst1, &env->active_fpu.fp_status),
                  float32_unordered(fsth1, fsth0, &env->active_fpu.fp_status)  || float32_le(fsth0, fsth1, &env->active_fpu.fp_status))
+
+#ifdef CONFIG_TCG_TAINT
+void helper_DECAF_taint_patch(void) { }
+#endif /* CONFIG_TCG_TAINT */
+

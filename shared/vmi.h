@@ -28,14 +28,14 @@ extern "C" {
 #define MAX_NAME_LENGTHC 64
 
 typedef enum {
-	WINXP_SP2_C = 0, WINXP_SP3_C, WIN7_SP0_C, WIN7_SP1_C, LINUX_2_6_C,
+	WINXP_SP2_C = 0, WINXP_SP3_C, WIN7_SP0_C, WIN7_SP1_C, LINUX_GENERIC_C,
 } GUEST_OS_C;
 
 
 class module{
 public:
 	char name[32];
-	char fullname[128];
+	char fullname[256];
 	//string fullname;
 	uint32_t size;
 	uint32_t codesize; // use these to identify dll
@@ -58,6 +58,7 @@ public:
     unordered_map < uint32_t,module * >module_list;
     //a set of virtual pages that have been resolved with module information
     unordered_set< uint32_t > resolved_pages;
+    unordered_set< uint32_t > pending_pages;
 };
 /*
 typedef struct _cr3_info_c{
@@ -73,7 +74,10 @@ typedef struct os_handle_c{
 
 // add process info to process list
 int addProcV(process *proc);
+
 int findProcessByPidH(uint32_t pid);
+process *findProcessByPid(uint32_t pid);
+
 process * findProcessByCR3(uint32_t cr3);
 // remove process from list
 int removeProcV(uint32_t pid);

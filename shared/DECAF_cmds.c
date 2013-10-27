@@ -16,6 +16,7 @@ http://code.google.com/p/decaf-platform/
 #include "DECAF_cmds.h"
 #include "procmod.h"
 
+#if 0
 void do_linux_ps(Monitor *mon, const QDict* qdict)
 {
   if (qdict_haskey(qdict, "mmap_flag"))
@@ -23,6 +24,7 @@ void do_linux_ps(Monitor *mon, const QDict* qdict)
   else
     linux_ps(mon, 1);
 }
+#endif
 
 void do_guest_ps(Monitor *mon)
 {
@@ -46,3 +48,21 @@ void do_guest_modules(Monitor *mon, const QDict *qdict)
   }
   list_guest_modules(mon, pid);
 }
+
+extern int DECAF_kvm_enabled;
+
+void do_toggle_kvm(Monitor *mon, const QDict *qdict)
+{
+    int status = qdict_get_bool(qdict, "status");
+    if(DECAF_kvm_enabled == status) {
+    	monitor_printf(default_mon, "KVM has already been turned %s!\n", status? "on": "off");
+    	return;
+    }
+
+    DECAF_stop_vm();
+    DECAF_kvm_enabled = status;
+    DECAF_start_vm();
+    monitor_printf(default_mon, "KVM is now turned %s!\n", status? "on": "off");
+
+}
+

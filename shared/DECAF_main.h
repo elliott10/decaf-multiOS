@@ -36,6 +36,7 @@ extern "C"
 {
 #endif
 
+extern int DECAF_kvm_enabled;
 
 /*************************************************************************
  * The Plugin interface comes first

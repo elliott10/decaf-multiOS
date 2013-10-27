@@ -167,7 +167,7 @@ void REGPARM __taint_ldb_raw_paddr(ram_addr_t addr,gva_t vaddr)
 	    cpu_single_env->tempidx = (*(uint8_t *)(leaf_node->bitmap + (addr & LEAF_ADDRESS_MASK)));
 	    cpu_single_env->tempidx = cpu_single_env->tempidx & 0xFF;
 	//if (cpu_single_env->tempidx) { fprintf(stderr, "__taint_ldb_raw(0x%08x) -> 0x%08x\n", addr, cpu_single_env->tempidx); __asm__ ("int $3"); }
-	    if (cpu_single_env->tempidx & DECAF_is_callback_needed(DECAF_READ_TAINTMEM_CB)){
+	    if (cpu_single_env->tempidx && DECAF_is_callback_needed(DECAF_READ_TAINTMEM_CB)){
 	    	helper_DECAF_invoke_read_taint_mem(vaddr,addr,1,(uint8_t *)(leaf_node->bitmap + (addr & LEAF_ADDRESS_MASK)));
 	    }
 	  }
@@ -195,7 +195,7 @@ void REGPARM __taint_ldw_raw_paddr(ram_addr_t addr,gva_t vaddr)
 	    cpu_single_env->tempidx =  (*(uint16_t *)(leaf_node->bitmap + (addr & LEAF_ADDRESS_MASK)));
 	    cpu_single_env->tempidx = cpu_single_env->tempidx & 0xFFFF;
 	//if (cpu_single_env->tempidx) { fprintf(stderr, "__taint_ldw_raw(0x%08x) -> 0x%08x\n", addr, cpu_single_env->tempidx); __asm__ ("int $3"); }
-		if (cpu_single_env->tempidx & DECAF_is_callback_needed(DECAF_READ_TAINTMEM_CB)) {
+		if (cpu_single_env->tempidx && DECAF_is_callback_needed(DECAF_READ_TAINTMEM_CB)) {
 			helper_DECAF_invoke_read_taint_mem(vaddr,addr,2,(uint8_t *)(leaf_node->bitmap + (addr & LEAF_ADDRESS_MASK)));
 		}
 	  }
@@ -224,7 +224,7 @@ void REGPARM __taint_ldl_raw_paddr(ram_addr_t addr,gva_t vaddr)
 	    cpu_single_env->tempidx = cpu_single_env->tempidx & 0xFFFFFFFF;
 	#endif /* TCG_TARGET_REG_BITS == 64 */
 	//if (cpu_single_env->tempidx) { fprintf(stderr, "__taint_ldl_raw(0x%08x) -> 0x%08x\n", addr, cpu_single_env->tempidx); __asm__ ("int $3"); }
-		if (cpu_single_env->tempidx & DECAF_is_callback_needed(DECAF_READ_TAINTMEM_CB)) {
+		if (cpu_single_env->tempidx && DECAF_is_callback_needed(DECAF_READ_TAINTMEM_CB)) {
 			helper_DECAF_invoke_read_taint_mem(vaddr,addr,4,(uint8_t *)(leaf_node->bitmap + (addr & LEAF_ADDRESS_MASK)));
 		}
 
@@ -267,7 +267,7 @@ void REGPARM __taint_ldq_raw_paddr(ram_addr_t addr,gva_t vaddr)
 	  }
 	// 32 -bit debug
 	//if (cpu_single_env->tempidx || cpu_single_env->tempidx2) { fprintf(stderr, "__taint_ldq_raw(0x%08x) -> 0x%08x, 0x%08x\n", addr, cpu_single_env->tempidx, cpu_single_env->tempidx2); __asm__ ("int $3"); }
-	  if ((cpu_single_env->tempidx || cpu_single_env->tempidx2) & DECAF_is_callback_needed(DECAF_READ_TAINTMEM_CB))
+	  if ((cpu_single_env->tempidx || cpu_single_env->tempidx2) && DECAF_is_callback_needed(DECAF_READ_TAINTMEM_CB))
 	  {
 		  taint_temp[0] = cpu_single_env->tempidx;
 		  taint_temp[1] = cpu_single_env->tempidx2;
@@ -302,14 +302,23 @@ void REGPARM __taint_stb_raw_paddr(ram_addr_t addr,gva_t vaddr) {
 		return;
 
 	//if (cpu_single_env->tempidx & 0xFF) { fprintf(stderr, "__taint_stb_raw(0x%08x) -> 0x%08x\n", addr, cpu_single_env->tempidx & 0xFF); __asm__ ("int $3"); }
+	/* AWH - Keep track of whether the taint state has changed for this location.
+	   If taint was 0 and it is 0 after this store, then change is 0.  Otherwise,
+	   it is 1.  This is so any plugins can track that there has been a change
+	   in taint. */
+	uint16_t before, after;
+	char changed = 0;
 
 	tbitpage_leaf_t *leaf_node = taint_st_general_i32(addr,
 			cpu_single_env->tempidx & 0xFF);
-	if (leaf_node)
+	if (leaf_node) {
+		before = *(uint8_t *) (leaf_node->bitmap + (addr & LEAF_ADDRESS_MASK));
 		*(uint8_t *) (leaf_node->bitmap + (addr & LEAF_ADDRESS_MASK)) =
 				cpu_single_env->tempidx & 0xFF;
-
-	if ( ( cpu_single_env->tempidx & 0xFF) & DECAF_is_callback_needed( DECAF_WRITE_TAINTMEM_CB) )
+		after = *(uint8_t *) (leaf_node->bitmap + (addr & LEAF_ADDRESS_MASK));
+    if ((before != after) || (cpu_single_env->tempidx & 0xFF)) changed = 1;
+  }
+	if ( changed && DECAF_is_callback_needed( DECAF_WRITE_TAINTMEM_CB) )
 		helper_DECAF_invoke_write_taint_mem(vaddr,addr,1,(uint8_t *) (leaf_node->bitmap + (addr & LEAF_ADDRESS_MASK)));
 	return;
 }
@@ -319,15 +328,25 @@ void REGPARM __taint_stw_raw_paddr(ram_addr_t addr,gva_t vaddr) {
 		return;
 
 	//if (cpu_single_env->tempidx & 0xFFFF) {fprintf(stderr, "__taint_stw_raw(0x%08x) -> 0x%08x\n", addr,cpu_single_env->tempidx & 0xFFFF);__asm__ ("int $3");}
+	/* AWH - Keep track of whether the taint state has changed for this location.
+	   If taint was 0 and it is 0 after this store, then change is 0.  Otherwise,
+	   it is 1.  This is so any plugins can track that there has been a change
+	   in taint. */
+  uint16_t before, after;
+  char changed = 0;
 
 	tbitpage_leaf_t *leaf_node = taint_st_general_i32(addr,
 			cpu_single_env->tempidx & 0xFFFF);
-	if (leaf_node)
+	if (leaf_node) {
+		before = *(uint16_t *) (leaf_node->bitmap + (addr & LEAF_ADDRESS_MASK));
 		*(uint16_t *) (leaf_node->bitmap + (addr & LEAF_ADDRESS_MASK)) =
 				(uint16_t) cpu_single_env->tempidx & 0xFFFF;
-	if ( ( cpu_single_env->tempidx & 0xFFFF) & DECAF_is_callback_needed( DECAF_WRITE_TAINTMEM_CB) )
+    after = *(uint16_t *) (leaf_node->bitmap + (addr & LEAF_ADDRESS_MASK));
+    if ((before != after) || (cpu_single_env->tempidx & 0xFFFF)) changed = 1;
+	}
+	if ( changed && DECAF_is_callback_needed( DECAF_WRITE_TAINTMEM_CB) ) {
 		helper_DECAF_invoke_write_taint_mem(vaddr,addr,2,(uint8_t *) (leaf_node->bitmap + (addr & LEAF_ADDRESS_MASK)));
-
+  }
 	return;
 }
 
@@ -336,14 +355,23 @@ void REGPARM __taint_stl_raw_paddr(ram_addr_t addr,gva_t vaddr) {
 		return;
 
 	//if (cpu_single_env->tempidx & 0xFFFFFFFF) {fprintf(stderr, "__taint_stl_raw(0x%08x) -> 0x%08x\n", addr,cpu_single_env->tempidx & 0xFFFFFFFF);__asm__ ("int $3");}
+	/* AWH - Keep track of whether the taint state has changed for this location.
+	   If taint was 0 and it is 0 after this store, then change is 0.  Otherwise,
+	   it is 1.  This is so any plugins can track that there has been a change
+	   in taint. */
+	uint16_t before, after;
+	char changed = 0;
 
 	tbitpage_leaf_t *leaf_node = taint_st_general_i32(addr,
 			cpu_single_env->tempidx & 0xFFFFFFFF);
-	if (leaf_node)
+	if (leaf_node) {
+		before = *(uint32_t *) (leaf_node->bitmap + (addr & LEAF_ADDRESS_MASK));
 		*(uint32_t *) (leaf_node->bitmap + (addr & LEAF_ADDRESS_MASK)) =
 				cpu_single_env->tempidx & 0xFFFFFFFF;
-
-	if ( ( cpu_single_env->tempidx & 0xFFFFFFFF) & DECAF_is_callback_needed( DECAF_WRITE_TAINTMEM_CB) )
+		after = *(uint32_t *) (leaf_node->bitmap + (addr & LEAF_ADDRESS_MASK));
+		if ((before != after) || (cpu_single_env->tempidx & 0xFFFFFFFF)) changed = 1;
+	}
+	if ( changed && DECAF_is_callback_needed( DECAF_WRITE_TAINTMEM_CB) )
 		helper_DECAF_invoke_write_taint_mem(vaddr,addr,4,(uint8_t *) (leaf_node->bitmap + (addr & LEAF_ADDRESS_MASK)));
 	return;
 }
@@ -351,6 +379,14 @@ void REGPARM __taint_stl_raw_paddr(ram_addr_t addr,gva_t vaddr) {
 void REGPARM __taint_stq_raw_paddr(ram_addr_t addr,gva_t vaddr) {
 	if (!taint_memory_page_table || addr >= ram_size)
 		return;
+
+	/* AWH - Keep track of whether the taint state has changed for this location.
+	   If taint was 0 and it is 0 after this store, then change is 0.  Otherwise,
+	   it is 1.  This is so any plugins can track that there has been a change
+	   in taint. */
+	uint16_t before, after;
+	char changed = 0;
+
 	tbitpage_leaf_t *leaf_node = NULL, *leaf_node2 = NULL;
 	uint32_t taint_temp[2];
 
@@ -372,15 +408,23 @@ void REGPARM __taint_stq_raw_paddr(ram_addr_t addr,gva_t vaddr) {
 
 	leaf_node = taint_st_general_i32(addr, cpu_single_env->tempidx);
 	leaf_node2 = taint_st_general_i32(addr + 4, cpu_single_env->tempidx2);
-	if (leaf_node)
+	if (leaf_node) {
+		before = *(uint32_t *) (leaf_node->bitmap + (addr & LEAF_ADDRESS_MASK));
 		*(uint32_t *) (leaf_node->bitmap + (addr & LEAF_ADDRESS_MASK)) =
 				cpu_single_env->tempidx;
-	if (leaf_node2)
+		after = *(uint32_t *) (leaf_node->bitmap + (addr & LEAF_ADDRESS_MASK));
+    if ((before != after) || (cpu_single_env->tempidx & 0xFFFFFFFF)) changed = 1;
+	}
+	if (leaf_node2) {
+		before = *(uint32_t *) (leaf_node->bitmap + (addr & LEAF_ADDRESS_MASK));
 		*(uint32_t *) (leaf_node2->bitmap + ((addr+4) & LEAF_ADDRESS_MASK)) =
 				cpu_single_env->tempidx2;
+		after = *(uint32_t *) (leaf_node->bitmap + (addr & LEAF_ADDRESS_MASK));
+		if ((before != after) || (cpu_single_env->tempidx2 & 0xFFFFFFFF)) changed = 1;
+	}
 #endif /* TCG_TARGET_REG_BITS check */
 
-	if ( ( cpu_single_env->tempidx || cpu_single_env->tempidx2 ) & DECAF_is_callback_needed (DECAF_WRITE_TAINTMEM_CB) )
+	if ( changed && DECAF_is_callback_needed (DECAF_WRITE_TAINTMEM_CB) )
 	{
 		taint_temp[0] = cpu_single_env->tempidx;
 		taint_temp[1] = cpu_single_env->tempidx2;

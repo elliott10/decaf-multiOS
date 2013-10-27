@@ -56,11 +56,6 @@ int insn_tainted = 0;		//Indicates if the current instruction is tainted
 int plugin_taint_record_size = 0;
 #endif
 
-//Aravind - call backs for the instruction handlers
-void (*insn_cbl1[16*16]) (uint32_t eip, uint32_t op); //Used to get l1 callbacks (all opcodes except 0x0f) insn_cbl1[byte1byte2] holds the cb for that opcode
-void (*insn_cbl2[16*16]) (uint32_t eip, uint32_t op); //Used to get l2 callbacks (when first 2 bytes are 0x0f, next two bytes are indexed in this array)
-//end - Aravind
-
 // AWH extern CPUState *first_cpu;
 
 #if 0
@@ -225,49 +220,6 @@ int DECAF_get_page_access(CPUState* env, uint32_t addr)
     /* page size is 4K */
     return (pte & PG_RW_MASK);
 }
-
-
-//Aravind - Function to register cb handlers for instruction ranges
-void DECAF_register_insn_cb_range(uint32_t start_opcode, uint32_t end_opcode, void (*insn_cb_handler) (uint32_t, uint32_t))
-{
-	int i;
-
-	if(end_opcode < start_opcode) {
-		fprintf(stderr, "end_opcode can't be less than start_opcode.\n");
-		return;
-	}
-
-	if(start_opcode <= 0xff) {
-		for(i = start_opcode; i <= end_opcode; i++) {
-			insn_cbl1[i] = insn_cb_handler;
-		}
-	}
-
-	if(start_opcode >= 0x0f00) {
-		insn_cbl1[0x0f] = (void *)1; //Indicator that l2 cbs exist
-		for(i = start_opcode; i <= end_opcode; i++) {
-			insn_cbl2[i-0x0f00] = insn_cb_handler;
-		}
-	}
-	//Flush the tb
-	tb_flush(cpu_single_env);
-}
-
-//Function to cleanup callbacks. Called when plugin cleansup
-void DECAF_cleanup_insn_cbs(void)
-{
-	int i;
-    //Aravind - reset insn_cbs
-    for(i = 0; i < 16*16; i++) {
-    	insn_cbl1[i] = 0;
-    	insn_cbl2[i] = 0;
-    }
-    tb_flush(cpu_single_env);
-    //end - Aravind
-}
-
-//end - Aravind
-
 
 
 

@@ -91,7 +91,7 @@ static uint32_t gen_opc_condexec_bits[OPC_BUF_SIZE];
 #define DISAS_WFI 4
 #define DISAS_SWI 5
 
-static TCGv_ptr cpu_env;
+/* AWH static */ TCGv_ptr cpu_env;
 /* We reuse the same 64-bit temporaries for efficiency.  */
 static TCGv_i64 cpu_V0, cpu_V1, cpu_M0;
 static TCGv_i32 cpu_R[16];
@@ -9874,6 +9874,17 @@ undef:
     gen_exception_insn(s, 2, EXCP_UDEF);
 }
 
+#ifdef CONFIG_TCG_IR_LOG
+inline void log_tcg_ir(TranslationBlock *tb)
+{
+    /* AWH - Store the IRs for logging to disk later by plugin, if needed. */
+    tb->DECAF_num_opc = (gen_opc_ptr - gen_opc_buf) / sizeof(uint16_t);
+    tb->DECAF_num_opparam = (gen_opparam_ptr - gen_opparam_buf) / sizeof(TCGArg);
+    memcpy(tb->DECAF_gen_opc_buf, gen_opc_buf, tb->DECAF_num_opc * sizeof(uint16_t));
+    memcpy(tb->DECAF_gen_opparam_buf, gen_opparam_buf, tb->DECAF_num_opparam * sizeof(TCGArg));
+}
+#endif /* CONFIG_TCG_IR_LOG */
+
 /* generate intermediate code in gen_opc_buf and gen_opparam_buf for
    basic block 'tb'. If search_pc is TRUE, also generate PC
    information for each intermediate instruction. */
@@ -10008,6 +10019,9 @@ static inline void gen_intermediate_code_internal(CPUState *env,
         }
 #else
         if (dc->pc >= 0xfffffff0 && IS_M(env)) {
+#ifdef CONFIG_TCG_IR_LOG
+            log_tcg_ir(tb);
+#endif /* CONFIG_TCG_IR_LOG */
 #ifdef CONFIG_TCG_TAINT
             if (taint_tracking_enabled) {
                 lj = optimize_taint(search_pc);
@@ -10025,6 +10039,9 @@ static inline void gen_intermediate_code_internal(CPUState *env,
         if (unlikely(!QTAILQ_EMPTY(&env->breakpoints))) {
             QTAILQ_FOREACH(bp, &env->breakpoints, entry) {
                 if (bp->pc == dc->pc) {
+#ifdef CONFIG_TCG_IR_LOG
+                    log_tcg_ir(tb);
+#endif /* CONFIG_TCG_IR_LOG */
 #ifdef CONFIG_TCG_TAINT
                     if (taint_tracking_enabled) {
                         lj = optimize_taint(search_pc);
@@ -10093,7 +10110,9 @@ static inline void gen_intermediate_code_internal(CPUState *env,
              !singlestep &&
              dc->pc < next_page_start &&
              num_insns < max_insns);
-
+#ifdef CONFIG_TCG_IR_LOG
+    log_tcg_ir(tb);
+#endif /* CONFIG_TCG_IR_LOG */
 #ifdef CONFIG_TCG_TAINT
     if (not_tainted && taint_tracking_enabled)
         lj = optimize_taint(search_pc);
@@ -10193,6 +10212,13 @@ done_generating:
         tb->size = dc->pc - pc_start;
         tb->icount = num_insns;
     }
+#ifdef CONFIG_TCG_IR_LOG
+    /* AWH - Store the IRs for logging to disk later by plugin, if needed. */
+    tb->DECAF_num_opc = (gen_opc_ptr - gen_opc_buf) / sizeof(uint16_t);
+    tb->DECAF_num_opparam = (gen_opparam_ptr - gen_opparam_buf) / sizeof(TCGArg);
+    memcpy(tb->DECAF_gen_opc_buf, gen_opc_buf, tb->DECAF_num_opc * sizeof(uint16_t));
+    memcpy(tb->DECAF_gen_opparam_buf, gen_opparam_buf, tb->DECAF_num_opparam * sizeof(TCGArg));
+#endif /* CONFIG_TCG_IR_LOG */
 }
 
 void gen_intermediate_code(CPUState *env, TranslationBlock *tb)

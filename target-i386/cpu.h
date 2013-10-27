@@ -621,6 +621,7 @@ typedef struct CPUX86State {
 #endif /* CONFIG_TCG_TAINT */
     target_ulong tempidx; // AWH - added for DECAF
     target_ulong tempidx2; // AWH - added for DECAF
+    target_ulong eip_taint; // AWH - EIP callback
     target_ulong eip;
     target_ulong eflags; /* eflags register. During CPU emulation, CC
                         flags and DF are set to zero because they are
@@ -653,8 +654,8 @@ typedef struct CPUX86State {
     uint16_t fpus;
     uint16_t fpuc;
     // AWH
-    //target_ulong fpip; //added by Heng Yin for better FPU emulation
-    target_ulong fpcs; //added by Heng Yin for better FPU emulation
+    target_ulong fpip_t; //added by Heng Yin for better FPU emulation
+    target_ulong fpcs_t; //added by Heng Yin for better FPU emulation
     target_ulong branch_cnt;    //JMK: added by manju mjayacha@syr.edu to store the branch count value
 
     uint8_t fptags[8];   /* 0 = valid, 1 = empty */

@@ -2156,8 +2156,9 @@ static void free_and_trace(gpointer mem)
     free(mem);
 }
 
-extern void DECAF_cleanup_insn_cbs(void);
-extern void do_load_plugin_internal(Monitor* mon, const char* plugin_path); 
+//extern void DECAF_cleanup_insn_cbs(void);
+extern void do_load_plugin_internal(Monitor* mon, const char* plugin_path);
+extern int DECAF_kvm_enabled;
 //end - Aravind
 
 int main(int argc, char **argv, char **envp)
@@ -2802,9 +2803,12 @@ int main(int argc, char **argv, char **envp)
             case QEMU_OPTION_after_loadvm:      // TEMU option
                 after_loadvm = optarg;
                 break;
-            case QEMU_OPTION_load_plugin:       // TEMU option
+            case QEMU_OPTION_load_plugin:       // DECAF option
                 load_plugin = optarg;
                 break;
+            case QEMU_OPTION_toggle_kvm:
+            	DECAF_kvm_enabled = optarg;
+            	break;
             case QEMU_OPTION_full_screen:
                 full_screen = 1;
                 break;

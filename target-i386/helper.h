@@ -5,8 +5,11 @@
 DEF_HELPER_FLAGS_1(cc_compute_all, TCG_CALL_PURE, i32, int)
 DEF_HELPER_FLAGS_1(cc_compute_c, TCG_CALL_PURE, i32, int)
 
-//Aravind - Generic insn_range_cb_dispatcher
-DEF_HELPER_3(insn_cb_dispatch, void, tl, tl, i32) //insn_cb_dispatch(eip, next_eip, opcode) next_eip used if insn branches
+//Aravind - Generic opcode_range_cb_dispatcher
+//DECAF_invoke_opcode_range_callback(CPUState *env, target_ulong eip, target_ulong next_eip, uint32_t op)
+DEF_HELPER_4(DECAF_invoke_opcode_range_callback, void, ptr, tl, tl, i32)
+//TODO: insn_cb_dispatch must go after range_callback impl is complete
+//DEF_HELPER_3(insn_cb_dispatch, void, tl, tl, i32) //insn_cb_dispatch(eip, next_eip, opcode) next_eip used if insn branches
 //end - Aravind
 
 //DEF_HELPER_1(DECAF_invoke_callback, void, i32)
@@ -19,8 +22,11 @@ DEF_HELPER_3(DECAF_invoke_block_end_callback, void, ptr, ptr, tl)
 DEF_HELPER_1(DECAF_invoke_insn_begin_callback, void, ptr)
 DEF_HELPER_1(DECAF_invoke_insn_end_callback, void, ptr)
 
+//added by Hu for better fpu emulation
+DEF_HELPER_0(DECAF_update_fpu, void);
+
 #ifdef CONFIG_TCG_TAINT
-DEF_HELPER_1(DECAF_invoke_eip_check_callback,void,tl)
+DEF_HELPER_2(DECAF_invoke_eip_check_callback,void,i32,i32)
 DEF_HELPER_0(DECAF_taint_patch,void)
 #endif /* CONFIG_TCG_TAINT */
 

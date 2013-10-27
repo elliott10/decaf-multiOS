@@ -41,6 +41,8 @@
 #include "shared/vmi_include.h"
 #endif
 
+int DECAF_kvm_enabled = 0;
+
 plugin_interface_t *decaf_plugin = NULL;
 static void *plugin_handle = NULL;
 static char decaf_plugin_path[PATH_MAX] = "";
@@ -335,7 +337,7 @@ int do_unload_plugin(Monitor *mon, const QDict *qdict, QObject **ret_data) {
 		hookapi_flush_hooks(decaf_plugin_path);
 #ifdef TARGET_I386
 		//Currently opcode-based callback mechanism is only available in x86.
-		DECAF_cleanup_insn_cbs();
+		//DECAF_cleanup_insn_cbs();
 #endif
 //LOK: Created a new callback interface for procmod
 		//        loadmainmodule_notify = createproc_notify = removeproc_notify = loadmodule_notify = NULL;
@@ -392,7 +394,7 @@ void DECAF_loadvm(void *opaque) {
 	}
 }
 
-static FILE *guestlog = NULL;
+FILE *guestlog = NULL;
 
 static void DECAF_save(QEMUFile * f, void *opaque) {
 	uint32_t len = strlen(decaf_plugin_path) + 1;
@@ -484,7 +486,6 @@ static int DECAF_load(QEMUFile * f, void *opaque, int version_id) {
 extern void tainting_init(void);
 extern void function_map_init(void);
 extern void DECAF_callback_init(void);
-extern void vmi_init(void);
 
 void DECAF_init(void) {
 	DECAF_callback_init();

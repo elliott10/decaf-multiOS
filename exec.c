@@ -24,12 +24,6 @@
 #include <sys/mman.h>
 #endif
 
-//#include "test_tlb_cb.h"
-
-#ifdef CONFIG_VMI_ENABLE
-#include "shared/DECAF_callback_to_QEMU.h"
-#endif
-
 #include "qemu-common.h"
 #include "cpu.h"
 #include "tcg.h"
@@ -64,6 +58,7 @@
 #endif
 
 #include "DECAF_main.h"
+#include "shared/DECAF_callback_to_QEMU.h"
 
 //#define DEBUG_TB_INVALIDATE
 //#define DEBUG_FLUSH
@@ -84,6 +79,14 @@
 
 #define SMC_BITMAP_USE_THRESHOLD 10
 
+#ifdef CONFIG_TCG_IR_LOG
+static uint16_t *gDECAF_gen_opc_buf;
+#if TCG_TARGET_REG_BITS == 32
+uint32_t *gDECAF_gen_opparam_buf;
+#else
+uint64_t *gDECAF_gen_opparam_buf;
+#endif /* TCG_TARGET_REG_BITS */
+#endif /* CONFIG_TCG_IR_LOG */
 static TranslationBlock *tbs;
 static int code_gen_max_blocks;
 TranslationBlock *tb_phys_hash[CODE_GEN_PHYS_HASH_SIZE];
@@ -475,6 +478,9 @@ static void code_gen_alloc(unsigned long tb_size)
     map_exec(code_gen_buffer, code_gen_buffer_size);
 #else
     code_gen_buffer_size = tb_size;
+#ifdef CONFIG_TCG_IR_LOG
+    unsigned long i;
+#endif /* CONFIG_TCG_IR_LOG */
     if (code_gen_buffer_size == 0) {
 #if defined(CONFIG_USER_ONLY)
         code_gen_buffer_size = DEFAULT_CODE_GEN_BUFFER_SIZE;
@@ -565,8 +571,32 @@ static void code_gen_alloc(unsigned long tb_size)
     map_exec(code_gen_prologue, sizeof(code_gen_prologue));
     code_gen_buffer_max_size = code_gen_buffer_size -
         (TCG_MAX_OP_SIZE * OPC_BUF_SIZE);
+#if (defined(CONFIG_TCG_IR_LOG) && (TCG_TARGET_REG_BITS == 32))
+/* AWH - For people running DECAF on a 32-bit machine, the IR storage
+  will require too much RAM.  So, for 32-bit systems, we make the number
+  of code blocks much smaller. */
+    code_gen_max_blocks = code_gen_buffer_size / CODE_GEN_AVG_BLOCK_SIZE / 16;
+#else
     code_gen_max_blocks = code_gen_buffer_size / CODE_GEN_AVG_BLOCK_SIZE;
+#endif /* CONFIG_TCG_IR_LOG && (TCG_TARGET_REG_BITS == 32) */
     tbs = g_malloc(code_gen_max_blocks * sizeof(TranslationBlock));
+#ifdef CONFIG_TCG_IR_LOG
+fprintf(stderr, "AWH: code_gen_alloc(): code_gen_max_blocks: %d\n", code_gen_max_blocks);
+fprintf(stderr, "AWH: code_gen_alloc(): gDECAF_gen_opc_buf: %d\n", OPC_MAX_SIZE * sizeof(uint16_t) * code_gen_max_blocks);
+    gDECAF_gen_opc_buf = g_malloc(OPC_MAX_SIZE * sizeof(uint16_t) * code_gen_max_blocks);
+fprintf(stderr, "AWH: code_gen_alloc(): gDECAF_gen_opparam_buf: %d\n", OPC_MAX_SIZE * sizeof(uint16_t) * 6 * code_gen_max_blocks);
+    gDECAF_gen_opparam_buf = g_malloc(OPC_MAX_SIZE * sizeof(TCGArg) * 6 * code_gen_max_blocks);
+
+    for (i = 0; i < code_gen_max_blocks; i++) {
+      tbs[i].DECAF_tb_id = i;
+      tbs[i].DECAF_gen_opc_buf = 
+        gDECAF_gen_opc_buf + (OPC_MAX_SIZE * i);
+      /* Allocate 6 arguments per IR opcode */
+      tbs[i].DECAF_gen_opparam_buf = 
+        gDECAF_gen_opparam_buf + (OPC_MAX_SIZE * 6 * i);
+      //printf("Allocating block %d of %d\n", i+1, code_gen_max_blocks);
+    }
+#endif /* CONFIG_TCG_IR_LOG */
 }
 
 /* Must be called before using the QEMU cpus. 'tb_size' is the size
@@ -684,6 +714,11 @@ static TranslationBlock *tb_alloc(target_ulong pc)
     tb = &tbs[nb_tbs++];
     tb->pc = pc;
     tb->cflags = 0;
+#ifdef CONFIG_TCG_IR_LOG
+    tb->DECAF_logged = 0;  /* AWH - Has this been logged to disk? */
+    tb->DECAF_num_opc = 0;
+    tb->DECAF_num_opparam = 0;
+#endif /* CONFIG_TCG_IR_LOG */
     return tb;
 }
 
@@ -695,6 +730,9 @@ void tb_free(TranslationBlock *tb)
     if (nb_tbs > 0 && tb == &tbs[nb_tbs - 1]) {
         code_gen_ptr = tb->tc_ptr;
         nb_tbs--;
+#ifdef CONFIG_TCG_IR_LOG
+        tb->DECAF_logged = 0;
+#endif /* CONFIG_TCG_TAINT */
     }
 }
 
@@ -2336,8 +2374,7 @@ void tlb_set_page(CPUState *env, target_ulong vaddr,
 #ifdef CONFIG_VMI_ENABLE
         if (DECAF_is_callback_needed(DECAF_TLB_EXEC_CB))
         	DECAF_invoke_tlb_exec_callback(env, vaddr);
-#endif
-
+#endif /* CONFIG_VMI_ENABLE */
     } else {
         te->addr_code = -1;
     }

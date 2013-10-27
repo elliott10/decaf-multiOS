@@ -4468,8 +4468,11 @@ void helper_fstenv(target_ulong ptr, int data32)
         stl(ptr, env->fpuc);
         stl(ptr + 4, fpus);
         stl(ptr + 8, fptag);
-        stl(ptr + 12, 0); /* fpip */
-        stl(ptr + 16, 0); /* fpcs */
+       // stl(ptr + 12, 0); /* fpip */
+       // stl(ptr + 16, 0); /* fpcs */
+        //added by Hu for better fpu emulation
+        stl(ptr + 12, cpu_single_env->fpip_t);
+        stl(ptr + 16, cpu_single_env->fpcs_t);
         stl(ptr + 20, 0); /* fpoo */
         stl(ptr + 24, 0); /* fpos */
     } else {
@@ -5903,6 +5906,8 @@ extern void (*insn_cbl2[16*16]) (uint32_t eip, uint32_t next_eip, uint32_t op);
 
 void helper_insn_cb_dispatch(uint32_t eip, uint32_t next_eip, uint32_t op2)
 {
+
+
   //LOK: Segmentation Fault
   return;
 	uint32_t op;
@@ -5940,29 +5945,42 @@ void helper_insn_cb_dispatch(uint32_t eip, uint32_t next_eip, uint32_t op2)
 /*
   patch for keystroke propagation on windows xp sp2 and sp3
 */
-void helper_DECAF_taint_patch(void) {
+void helper_DECAF_taint_patch(void)
+{
+	if (!taint_tracking_enabled) return;
+
 	if (cpu_single_env->eip != 0xbf8a4bde && cpu_single_env->eip != 0xbf84a74f
 			&& cpu_single_env->eip != 0xbf848d65 &&  //for sp3
 			cpu_single_env->eip != 0xbf848d1c) // updated sp3
-		return 0;
+		return ;
 
 	uint32_t phys_addr, addr, addr2, phys_addr2;
-	uint8_t taint, taint_check;
+	uint8_t  taint_check;
 	addr = cpu_single_env->regs[R_EBP] + 8;
 	phys_addr = DECAF_get_phys_addr(cpu_single_env, addr);
 	if (phys_addr == -1)
-		return 0;
+		return ;
 
 	taint_mem_check(phys_addr, 1, &taint_check);
 	if (!taint_check)
-		return 0;
+		return ;
 
 	addr2 = cpu_single_env->regs[R_EBP] + 0x14;
 
 	if (DECAF_read_mem(cpu_single_env, addr2, 4, &addr2) >= 0 && (phys_addr2 =
 			DECAF_get_phys_addr(cpu_single_env, addr2)) != -1) {
-		taint_mem(phys_addr2, 1, &taint);
+		taint_mem(phys_addr2, 1,(uint8_t*) &taint_check);
 	}
 }
 
 #endif /* CONFIG_TCG_TAINT */ 
+/*
+ * patch for better FPU emulation added by Hu
+ *
+ */
+
+void helper_DECAF_update_fpu(void)
+{
+	cpu_single_env->fpip_t = cpu_single_env->eip;
+	cpu_single_env->fpcs_t = cpu_single_env->segs[R_CS].selector;
+}
