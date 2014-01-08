@@ -2,7 +2,7 @@
  * vmi.h
  *
  *  Created on: Jan 22, 2013
- *      Author: haoru
+ *      Author: Heng Yin
  */
 
 
@@ -13,30 +13,23 @@
 #include <iostream>
 #include <list>
 #include <tr1/unordered_map>
-#include "vmi_include.h"
+#include <tr1/unordered_set>
+#include "vmi_callback.h"
 #include "monitor.h"
 
 //#ifdef CONFIG_VMI_ENABLE
 using namespace std;
 using namespace std::tr1;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-#include "qemu-timer.h"
+//#include "qemu-timer.h"
 #define NAMESIZEC 16
 #define MAX_NAME_LENGTHC 64
-
-typedef enum {
-	WINXP_SP2_C = 0, WINXP_SP3_C, WIN7_SP0_C, WIN7_SP1_C, LINUX_GENERIC_C,
-} GUEST_OS_C;
 
 
 class module{
 public:
 	char name[32];
 	char fullname[256];
-	//string fullname;
 	uint32_t size;
 	uint32_t codesize; // use these to identify dll
 	uint32_t checksum;
@@ -46,6 +39,7 @@ public:
 	unordered_map < uint32_t, string> function_map_offset;
 	unordered_map < string, uint32_t> function_map_name;
 };
+
 
 class process{
 public:
@@ -58,13 +52,15 @@ public:
     unordered_map < uint32_t,module * >module_list;
     //a set of virtual pages that have been resolved with module information
     unordered_set< uint32_t > resolved_pages;
-    unordered_set< uint32_t > pending_pages;
+    unordered_map< uint32_t, int > unresolved_pages;
 };
-/*
-typedef struct _cr3_info_c{
-	uint32_t value;
-	unordered_set<uint32_t> *vaddr_tbl;
-}cr3_info_c; */
+
+
+
+typedef enum {
+	WINXP_SP2_C = 0, WINXP_SP3_C, WIN7_SP0_C, WIN7_SP1_C, LINUX_GENERIC_C,
+} GUEST_OS_C;
+
 
 typedef struct os_handle_c{
 	GUEST_OS_C os_info;
@@ -72,58 +68,37 @@ typedef struct os_handle_c{
 	void (*init)();
 } os_handle_c;
 
-// add process info to process list
-int addProcV(process *proc);
+extern target_ulong VMI_guest_kernel_base;
 
-int findProcessByPidH(uint32_t pid);
-process *findProcessByPid(uint32_t pid);
+extern unordered_map < uint32_t, process * >process_map;
+extern unordered_map < uint32_t, process * >process_pid_map;
+extern unordered_map < string, module * >module_name;
 
-process * findProcessByCR3(uint32_t cr3);
-// remove process from list
-int removeProcV(uint32_t pid);
+module * VMI_find_module_by_pc(target_ulong pc, target_ulong pgd, target_ulong *base);
+
+module * VMI_find_module_by_name(const char *name, target_ulong pgd, target_ulong *base);
+
+module * VMI_find_module_by_base(target_ulong pgd, uint32_t base);
+
+process * VMI_find_process_by_pid(uint32_t pid);
+
+process * VMI_find_process_by_pgd(uint32_t pgd);
+
+process* VMI_find_process_by_name(char *name);
 
 // add one module
-int addModule(module *mod, char *key);
+int VMI_add_module(module *mod, const char *key);
 // find module by key
-module* findModule(char *key);
+module* VMI_find_module_by_key(const char *key);
 
 
-// insert module info to a process
-int procmod_insert_modinfoV(uint32_t pid,uint32_t base, module *mod);
-// remove module info from a process
-int procmod_remove_modinfoV(uint32_t pid, uint32_t base);
+int VMI_create_process(process *proc);
+int VMI_remove_process(uint32_t pid);
 
-#if 0 //these APIs are now deprecated. use APIs in procmod.h instead
+int VMI_insert_module(uint32_t pid, uint32_t base, module *mod);
+int VMI_remove_module(uint32_t pid, uint32_t base);
 
-// list process which may be used by command ps
-void listProcs(Monitor *mon);
-// list all modules of specified pid process
-void listModuleByPid(Monitor *mon, uint32_t pid);
-//int insert_module_infoV(list < module * >&module_list,module *mod);
-//int remove_module_infoV(list < module * >&module_list, uint32_t base);
-
-
-
-int procmod_remove_allV();
-int update_procV(process *proc);
-int addFuncV(module *mod,string name,uint32_t offset);
-int removeFuncV(module *mod,uint32_t offset);
-int removeFuncNameV(module *mod,string name);
-process* findProcessByNameH(char *name);
-
-int findCr3(uint32_t cr3);
-void insertCr3(uint32_t cr3);
-
-int addCr3info(cr3_info_c *cr3info);
-int findvaddrincr3(uint32_t cr3,target_ulong vaddr);
-void insertvaddrincr3(uint32_t cr3,target_ulong vaddr);
-#endif
-// query symbols from db
-//static void extract_funcs(process *proc, uint32_t base, module *mod);
-#ifdef __cplusplus
-};
-#endif
-
+extern "C" void VMI_init();
 #endif /* VMI_H_ */
 
 //#endif /*CONFIG_VMI_ENABLE*/

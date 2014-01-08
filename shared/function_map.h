@@ -32,14 +32,14 @@ http://code.google.com/p/decaf-platform/
 extern "C" {
 #endif
 
-//extern void handle_message(char *message);
+void function_map_init(void);
+void function_map_cleanup(void);
 
-extern void function_map_init(void);
-extern void function_map_cleanup(void);
+target_ulong funcmap_get_pc(const char *module_name, const char *function_name, target_ulong cr3);
 
-extern target_ulong funcmap_get_pc(const char *module_name, const char *function_name, target_ulong cr3);
+int funcmap_get_name_c(target_ulong pc, target_ulong cr3, char *mod_name, char *func_name);
 
-extern int funcmap_get_name_c(target_ulong pc, target_ulong cr3, char mod_name[], char func_name[]);
+void funcmap_insert_function(const char *module, const char *fname, uint32_t offset);
 
 extern void parse_function(const char *message);
 

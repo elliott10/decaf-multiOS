@@ -359,32 +359,6 @@ static inline void tcg_gen_op6ii_i64(TCGOpcode opc, TCGv_i64 arg1,
     *gen_opparam_ptr++ = arg6;
 }
 
-#if 0 //def CONFIG_TCG_TAINT
-static inline void gen_local_set_label(int n)
-{
-    tcg_gen_op1i(INDEX_op_local_set_label, n);
-}
-
-static inline void tcg_gen_local_brcond_i32(TCGCond cond, TCGv_i32 arg1,
-                                      TCGv_i32 arg2, int label_index)
-{
-    tcg_gen_op4ii_i32(INDEX_op_local_brcond_i32, arg1, arg2, cond, label_index);
-}
-
-static inline void tcg_gen_local_brcond_i64(TCGCond cond, TCGv_i64 arg1,
-                                      TCGv_i64 arg2, int label_index)
-{
-    tcg_gen_op6ii_i32(INDEX_op_local_brcond2_i32,
-                      TCGV_LOW(arg1), TCGV_HIGH(arg1), TCGV_LOW(arg2),
-                      TCGV_HIGH(arg2), cond, label_index);
-}
-
-static inline void tcg_gen_local_br(int label)
-{
-    tcg_gen_op1i(INDEX_op_local_br, label);
-}
-#endif /* CONFIG_TCG_TAINT */
-
 static inline void gen_set_label(int n)
 {
     tcg_gen_op1i(INDEX_op_set_label, n);
@@ -2210,6 +2184,10 @@ static inline void tcg_gen_goto_tb(int idx)
 
 #ifdef CONFIG_TCG_TAINT
 #if TCG_TARGET_REG_BITS == 32
+static inline void tcg_gen_DECAF_checkeip(tcg_target_long val1 ,tcg_target_long val2)
+{
+	tcg_gen_op2_i32(INDEX_op_DECAF_checkeip, val1, val2);
+}
 static inline void tcg_gen_taint_qemu_ld8u(TCGv ret, TCGv addr, int mem_index)
 {
 #if TARGET_LONG_BITS == 32
@@ -2329,7 +2307,10 @@ static inline void tcg_gen_taint_qemu_st64(TCGv_i64 arg, TCGv addr, int mem_inde
 }
 
 #else /* TCG_TARGET_REG_BITS == 32 */
-
+static inline void tcg_gen_DECAF_checkeip(tcg_target_long val1, tcg_target_long val2)
+{
+	tcg_gen_op2_i64(INDEX_op_DECAF_checkeip, val1 , val2);
+}
 static inline void tcg_gen_taint_qemu_ld8u(TCGv ret, TCGv addr, int mem_index)
 {
     tcg_gen_taint_qemu_ldst_op(INDEX_op_taint_qemu_ld8u, ret, addr, mem_index);

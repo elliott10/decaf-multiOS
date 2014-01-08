@@ -1768,9 +1768,6 @@ static inline void tcg_out_op(TCGContext *s, TCGOpcode opc,
         }
         break;
     case INDEX_op_br:
-#if 0 //def CONFIG_TCG_TAINT
-    case INDEX_op_local_br:
-#endif /* CONFIG_TCG_TAINT */
         tcg_out_jxx(s, JCC_JMP, args[0], 0);
         break;
     case INDEX_op_movi_i32:
@@ -1901,16 +1898,11 @@ static inline void tcg_out_op(TCGContext *s, TCGOpcode opc,
         tcg_out_brcond32(s, args[2], args[0], args[1], const_args[1],
                          args[3], 0);
         break;
-#if 0 //def CONFIG_TCG_TAINT
-    case INDEX_op_local_brcond_i32:
-#endif /* CONFIG_TCG_TAINT */
-        tcg_out_brcond32(s, args[2], args[0], args[1], const_args[1],
-                         args[3], 0);
-        break;
     case INDEX_op_setcond_i32:
         tcg_out_setcond32(s, args[3], args[0], args[1],
                           args[2], const_args[2]);
         break;
+
     OP_32_64(bswap16):
         tcg_out_rolw_8(s, args[0]);
         break;
@@ -2012,9 +2004,6 @@ static inline void tcg_out_op(TCGContext *s, TCGOpcode opc,
 
 #if TCG_TARGET_REG_BITS == 32
     case INDEX_op_brcond2_i32:
-#if 0 //def CONFIG_TCG_TAINT
-    case INDEX_op_local_brcond2_i32:
-#endif /* CONFIG_TCG_TAINT */
         tcg_out_brcond2(s, args, const_args, 0);
         break;
     case INDEX_op_setcond2_i32:
@@ -2065,9 +2054,6 @@ static inline void tcg_out_op(TCGContext *s, TCGOpcode opc,
         break;
 
     case INDEX_op_brcond_i64:
-#if 0 //def CONFIG_TCG_TAINT
-    case INDEX_op_local_brcond_i64:
-#endif /* CONFIG_TCG_TAINT */
         tcg_out_brcond64(s, args[2], args[0], args[1], const_args[1],
                          args[3], 0);
         break;
@@ -2102,7 +2088,10 @@ static inline void tcg_out_op(TCGContext *s, TCGOpcode opc,
             tcg_abort();
         }
         break;
-
+#ifdef CONFIG_TCG_TAINT
+    case INDEX_op_DECAF_checkeip:
+    	break;
+#endif
     default:
         tcg_abort();
     }
@@ -2116,9 +2105,9 @@ static const TCGTargetOpDef x86_op_defs[] = {
     { INDEX_op_call, { "ri" } },
     { INDEX_op_jmp, { "ri" } },
     { INDEX_op_br, { } },
-#if 0 //def CONFIG_TCG_TAINT
-    { INDEX_op_local_br, { } },
-#endif /* CONFIG_TCG_TAINT */
+#ifdef CONFIG_TCG_TAINT
+    {INDEX_op_DECAF_checkeip,{"r","r"}},
+#endif /*CONFIG_TCG_TAITN*/
     { INDEX_op_mov_i32, { "r", "r" } },
     { INDEX_op_movi_i32, { "r" } },
     { INDEX_op_ld8u_i32, { "r", "r" } },
@@ -2146,9 +2135,6 @@ static const TCGTargetOpDef x86_op_defs[] = {
     { INDEX_op_rotr_i32, { "r", "0", "ci" } },
 
     { INDEX_op_brcond_i32, { "r", "ri" } },
-#if 0 //def CONFIG_TCG_TAINT
-    { INDEX_op_local_brcond_i32, { "r", "ri" } },
-#endif /* CONFIG_TCG_TAINT */
 
     { INDEX_op_bswap16_i32, { "r", "0" } },
     { INDEX_op_bswap32_i32, { "r", "0" } },
@@ -2171,9 +2157,6 @@ static const TCGTargetOpDef x86_op_defs[] = {
     { INDEX_op_add2_i32, { "r", "r", "0", "1", "ri", "ri" } },
     { INDEX_op_sub2_i32, { "r", "r", "0", "1", "ri", "ri" } },
     { INDEX_op_brcond2_i32, { "r", "r", "ri", "ri" } },
-#if 0 //def CONFIG_TCG_TAINT
-    { INDEX_op_local_brcond2_i32, { "r", "r", "ri", "ri" } },
-#endif /* CONFIG_TCG_TAINT */
     { INDEX_op_setcond2_i32, { "r", "r", "r", "ri", "ri" } },
 #else
     { INDEX_op_mov_i64, { "r", "r" } },
@@ -2206,9 +2189,6 @@ static const TCGTargetOpDef x86_op_defs[] = {
     { INDEX_op_rotr_i64, { "r", "0", "ci" } },
 
     { INDEX_op_brcond_i64, { "r", "re" } },
-#if 0 //def CONFIG_TCG_TAINT
-    { INDEX_op_local_brcond_i64, { "r", "re" } },
-#endif /* CONFIG_TCG_TAINT */
     { INDEX_op_setcond_i64, { "r", "r", "re" } },
 
     { INDEX_op_bswap16_i64, { "r", "0" } },

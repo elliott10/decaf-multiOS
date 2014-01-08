@@ -33,6 +33,7 @@ extern "C"
 #include "shared/DECAF_callback_common.h"
 
 int DECAF_is_callback_needed(DECAF_callback_type_t cb_type);
+int DECAF_is_callback_needed_for_opcode(int op);
 int DECAF_is_BlockBeginCallback_needed(gva_t pc);
 int DECAF_is_BlockEndCallback_needed(gva_t from, gva_t to);
 
@@ -41,8 +42,8 @@ int DECAF_is_BlockEndCallback_needed(gva_t from, gva_t to);
 void DECAF_invoke_tlb_exec_callback(CPUState *env, gva_t vaddr);
 #endif
 
-void helper_DECAF_invoke_nic_rec_callback(uint8_t * buf,int size,int cur_pos,int start,int stop);
-void helper_DECAF_invoke_nic_send_callback(uint32_t addr,int size,uint8_t *buf);
+void helper_DECAF_invoke_nic_rec_callback(const uint8_t * buf, int size, int cur_pos, int start, int stop);
+void helper_DECAF_invoke_nic_send_callback(uint32_t addr, int size, const uint8_t *buf);
 void helper_DECAF_invoke_mem_read_callback(gva_t virt_addr,gpa_t phy_addr,DATA_TYPE data_type);
 void helper_DECAF_invoke_mem_write_callback(gva_t virt_addr,gpa_t phy_addr,DATA_TYPE data_type);
 void helper_DECAF_invoke_keystroke_callback(int keycode,uint32_t *taint_mark);

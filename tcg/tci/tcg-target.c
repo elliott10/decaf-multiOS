@@ -823,6 +823,12 @@ static void tcg_out_op(TCGContext *s, TCGOpcode opc, const TCGArg *args,
     case INDEX_op_end:
         TODO();
         break;
+#ifdef CONFIG_TCG_TAINT
+    case INDEX_op_DECAF_checkeip:
+    	tcg_out_r(s,*args++);
+    	tcg_out_r(s,*args);
+    	break;
+#endif
     default:
         fprintf(stderr, "Missing: %s\n", tcg_op_defs[opc].name);
         tcg_abort();

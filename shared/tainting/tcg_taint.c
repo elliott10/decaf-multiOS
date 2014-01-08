@@ -16,8 +16,8 @@
 #include "config-target.h"
 
 #include "helper.h" // Taint helper functions, plus I386 IN/OUT helpers
-#include "tcg_taint_branch.h"
-
+//#include "tcg_taint_branch.h"
+#include "DECAF_callback_common.h"
 //#define BLOCK_SKIP_GREATER_EQUAL 68
 //#define BLOCK_SKIP_LESS_EQUAL 66
 //#define ALLOW_BSLE 1
@@ -40,6 +40,8 @@ uint32_t block_count = 0; // AWH - Debugging
 
 // Typedef the CPU state struct to make tempidx ld/st cleaner
 #if defined(TARGET_I386)
+#define HELPER_SECTION_ONE
+#include "helper_i386_check.h"
 typedef CPUX86State OurCPUState;
 #elif defined(TARGET_ARM)
 typedef CPUARMState OurCPUState;
@@ -49,8 +51,7 @@ typedef CPUMIPSState OurCPUState;
 
 // AWH - In development
 //#define TCG_LOGGING_TAINT 1
-//#define TCG_TAINT_BRANCHING 1
-#define USE_TCG_OPTIMIZATIONS 1
+//#define USE_TCG_OPTIMIZATIONS 1
 //#define LOG_POINTER
 #define LOG_TAINTED_EIP
 // AWH - Change these to change taint/pointer rules
@@ -79,191 +80,9 @@ TCGv tempidx, tempidx2;
 // Extern in translate.c
 extern TCGv_ptr cpu_env;
 
-#ifdef TCG_TAINT_BRANCHING
 
-static int local_no_taint_label = 0;
-static int local_complete_label = 0;
-
-#if 0 // AWH - In development
-/* Basic Block node type for SSA transformation process */
-typedef struct BB_node {
-  /* First opcode/param for this BB node */
-  unsigned int begin_opcode_offset; /* Opcode index where this BB starts */
-  unsigned int begin_opparam_offset; /* Opparam index where this BB starts */
-  /* Size of this node in opcodes/params */
-  unsigned int num_opcodes;
-  unsigned int num_params;
-  /* Buffers to hold the opcodes/params */
-  uint16_t opc_buffer[OPC_BUF_SIZE];
-  TCGArg opparam_buffer[OPPARAM_BUF_SIZE];
-  /* IDs of next node(s) (-1 if none) */
-  signed int BB_fallthrough_index;
-  signed int BB_branch_index;
-  /* When we first construct the graph, we'll have references to labels that
-     we have not come across yet.  If this node has a branch to a label, that
-     label number is recorded here.  Later, once we've identified all of the
-     nodes, we'll sweep through each and resolve BB_branch_index to the
-     proper BB_node.  This is -1 if there is no label being branched to. */
-  signed int waiting_for_label;
-  /* Label for this BB (-1 if none) */
-  signed int BB_label;
-} BB_node_t;
-
-/* This is an array of the CFG nodes, so we can just traverse them without
-   having to follow links (for resolving labels). */
-#define MAX_BB_NODES 1024
-static BB_node_t *BB_node_list[MAX_BB_NODES];
-
-/* Create a BB node */
-static inline BB_node_t *createBBNode(void) {
-  BB_node_t *new_node = (BB_node_t *)calloc(1, sizeof(BB_node_t));
-  new_node->BB_fallthrough_index = -1;
-  new_node->BB_branch_index = -1;
-  new_node->waiting_for_label = -1;
-  new_node->BB_label = -1;
-}
-
-/* Sweep through the current TB and construct the CFG */
-static void constructCFG(int nb_opc, uint16_t *opc_buf, uint32_t *opparam_buf)
-{
-  int i = 0, x = 0;
-  uint16_t opc;
-  int opparam_index = 0;
-  int opc_index = 0;
-  int current_BB_node_index = 0;
-  BB_node_t *current_node = NULL;
-  
-
-  /* Reset the CFG to empty */
-  for (i = 0; i < MAX_BB_NODES; i++)
-  { 
-    if (BB_node_list[i]) 
-    {  
-      free(BB_node_list[i]);
-      BB_node_list[i] = NULL;
-    }
-  }
-
-  /* Create the first node */
-  current_node = createBBNode();
-  BB_node_list[current_BB_node_index++] = current_node;
-
-  /* Traverse the opcodes of the TB */  
-  for (i = 0; i < nb_opc; i++) {
-    opc = opc_buf[i];
-
-    /* Determine the number and type of arguments for the opcode */
-    if (opc == INDEX_op_call) {
-      TCGArg arg = opparam_buf[opparam_index];
-      nb_oargs = arg >> 16;
-      nb_iargs = arg & 0xffff;
-      nb_cargs = tcg_op_defs[opc].nb_cargs;
-      nb_args = nb_oargs + nb_iargs + nb_cargs + 1;
-    } else if (opc == INDEX_op_nopn) {
-      nb_args = nb_cargs = opparam_buf[opparam_index];
-      nb_oargs = nb_iargs = 0;
-    } else {
-      nb_args = tcg_op_defs[opc].nb_args;
-      nb_oargs = tcg_op_defs[opc].nb_oargs;
-      nb_iargs = tcg_op_defs[opc].nb_iargs;
-      nb_cargs = tcg_op_defs[opc].nb_cargs;
-
-      /* Start the logic that places ops and opparms into BBs */
-      switch (opc) {
-
-        /* These are the ops that conditionally END a BB with a label */
-        case INDEX_op_brcond_i32:
-        case INDEX_op_local_brcond_i32:
-        case INDEX_op_brcond_i64:
-        case INDEX_op_local_brcond_i64
-#if (TCG_TARGET_REG_BITS == 32)
-        case INDEX_op_brcond2_i32:
-        case INDEX_op_local_brcond2_i32:
-#endif /* TCG_TARGET_REG_BITS */
-          /* Set up fallthrough link */
-          current_node->BB_fallthrough_index = current_BB_node_index;
-          /* Set the label to resolve later */
-          current_node->waiting_for_label = 
-          /* Add op and opparms to current BB */
-          current_node->opc_buffer[current_node->num_opcodes++] = opc;
-          for (x = 0; x < nb_args; x++)
-            current_node->opparam_buffer[current_node->num_opparams++] = opparam_buf[opparam_index++];
-          /* Create a new node */
-          current_node = createBBNode();
-          BB_node_list[current_BB_node_index++] = current_node;
-          break;
-
-        /* These are the ops that unconditionally END a BB with a label */
-        case INDEX_op_br:
-        case INDEX_op_local_br:
-          current_node->waiting_for_label =
-        /* These are the ops that unconditionally END a BB without a label */
-        case INDEX_op_goto_tb:
-        case INDEX_op_exit_tb:
-        case INDEX_op_jmp:
-          /* Add op and opparams to current BB */
-          current_node->opc_buffer[current_node->num_opcodes++] = opc;
-          for (x = 0; x < nb_args; x++)
-            current_node->opparam_buffer[current_node->num_opparams++] = opparam_buf[opparam_index++];
-          /* Create a new node */
-          current_node = createBBNode();
-          BB_node_list[current_BB_node_index++] = current_node;        
-          break;
-
-        /* Mark the BB with its start label*/
-        case INDEX_op_set_label:
-          current_node->BB_label = opparam_buf[opparam_index];
-        /* The default case (just store the op and opparms in the BB */
-        default: 
-          /* Add op and opparams to current BB */
-          current_node->opc_buffer[current_node->num_opcodes++] = opc;
-          for (x = 0; x < nb_args; x++)
-            current_node->opparam_buffer[current_node->num_opparams++] = opparam_buf[opparam_index++];
-          break;
-      }
-    }    
-  }
-}
-#endif // AWH - In development
-
-static int cc_in_use = 0;
-static int global_in_use = 0;
-static int cond_used = 0;
-
-#if defined(TARGET_I386)
-// AWH - Defined in target-i386/translate.c
-extern TCGv cpu_cc_src, cpu_cc_dst, cpu_cc_tmp;
-extern TCGv_i32 cpu_cc_op;
-#endif /* TARGET_I386 */
-
-static inline int check_global_arg(TCGv arg)
-{
-  return (arg < tcg_ctx.nb_globals);
-}
-
-static inline int check_cc_arg(TCGv arg)
-{
-#if defined(TARGET_I386)
-  if((arg == cpu_cc_src) ||
-     (arg == cpu_cc_dst) ||
-     (arg == cpu_cc_tmp) ||
-     (arg == cpu_cc_op))
-    return 1;
-  else
-    return 0;
-#else
-#error Implement this
-#endif /* TARGET_I386 */
-}
-
-/* This holds our metadata for each temporary register to tell
-  whether it has been initialized (1) or is still uninitialized
-  (0).  If a temporary is used as an input to an IR, it is 
-  considered to be initialized.  All global registers are 
-  considered to be initialized at all times. */
-static uint8_t gen_opc_init_metadata[METADATA_SIZE];
-#endif /* TCG_TAINT_BRANCHING */
-
+#ifdef TCG_LOGGING_TAINT
+#if 0 // AWH
 /* This holds out metadata for each opcode to tell whether to 
   override the liveness optimizer pass (in tcg/tcg.c) for that
   opcode.  Even if an opcode looks like it should be removed 
@@ -273,8 +92,7 @@ static uint8_t gen_opc_init_metadata[METADATA_SIZE];
   is necessary to avoid having it optimize out taint branching 
   opcode paths. This is shared out to tcg.c via an extern. */
 uint8_t gen_opc_opt_immune_metadata[METADATA_SIZE];
-
-#ifdef TCG_LOGGING_TAINT
+#endif // AWH
 /* These are the number of temps that are created for the purpose of
   passing concrete values and registers into the taint logging helpers. */
 #define MAX_TAINT_LOG_TEMPS 12
@@ -356,16 +174,10 @@ static void DUMMY_TAINT(int nb_oargs, int nb_args)
       tcg_gen_movi_i64(arg0, 0);
 #endif
     }
-#ifdef TCG_TAINT_BRANCHING
-    orig0 = gen_opparam_ptr[(-1 * nb_args) + i];
-    if (orig0) {
-      gen_opc_init_metadata[orig0] = 1;
-    }
-#endif /* TCG_TAINT_BRANCHING */
   }
 }
 
-#ifdef USE_TCG_OPTIMIZATIONS
+#if 0 //defined(USE_TCG_OPTIMIZATIONS)
 /* This holds our metadata for each of the original opcodes to
   tell whether it will be elimintaed in liveness checks (0) or
   will still remain alive (1) and must be instrumented. */
@@ -385,10 +197,14 @@ static inline int gen_taintcheck_insn(int search_pc)
   static uint16_t gen_old_opc_icount[OPC_BUF_SIZE];
 #if defined(TARGET_I386)
   static uint8_t gen_old_opc_cc_op[OPC_BUF_SIZE];
+#if 0 // AWH - in helper_i386_check.h
   /* For INB, INW, INL helper functions */
   int in_helper_func = 0;
   /* For OUTB, OUTW, OUTL helper functions */
   int out_helper_func = 0;
+  /* For CMPXCHG helper function */
+  int cmpxchg_helper_func = 0;
+#endif // AWH
 #elif defined(TARGET_ARM)
   static uint32_t gen_old_opc_condexec_bits[OPC_BUF_SIZE];
 #endif /* TARGET check */
@@ -403,7 +219,7 @@ static inline int gen_taintcheck_insn(int search_pc)
   uint16_t opc=0;
   int nb_oargs=0, nb_iargs=0, nb_cargs=0;
   TCGv arg0, arg1, arg2, arg3, arg4, arg5, arg6;
-  TCGv t0, t1, t2, t3, t4, t_zero;
+  TCGv t0, t1, t2, t3, t4, t5, t6, t_zero;
   TCGv orig0, orig1, orig2, orig3, orig4, orig5;
 
   /* Copy all of the existing ops/parms into a new buffer to back them up. */
@@ -442,88 +258,6 @@ static inline int gen_taintcheck_insn(int search_pc)
     taint_log_temps[i] = tcg_temp_new_i64();
 #endif /* TCG_TARGET_REG_BITS */
 #endif /* TCG_LOGGING_TAINT */
-
-#ifdef TCG_TAINT_BRANCHING
-  cc_in_use = 0;
-  global_in_use = 0;
-  cond_used = 0;
-
-  /* Initialize the metadata that marks which registers
-    have been initialized. */
-  for (i = 0; i < tcg_ctx.nb_globals; i++)
-    gen_opc_init_metadata[i] = 1;
-  for (i = tcg_ctx.nb_globals; i < METADATA_SIZE; i++)
-    gen_opc_init_metadata[i] = 0;
-#if 0 // AWH
-  /* Determine if this TB uses a brcond variant in it.  If so,
-    we should implement branching on this TB. */
-  for (i=0; i < nb_opc; i++)
-  {
-    if (cond_used) break;
-
-    /* Check if we're using CC flags in this TB.  If so, don't 
-      instrument this TB with jumps. */
-    opc = gen_old_opc_buf[i];
-    
-    /* Determine the number and type of arguments for the opcode */
-    if (opc == INDEX_op_call) {
-      TCGArg arg = gen_old_opparam_buf[opparam_index];
-      nb_oargs = arg >> 16;
-      nb_iargs = arg & 0xffff;
-      nb_cargs = tcg_op_defs[opc].nb_cargs;
-      nb_args = nb_oargs + nb_iargs + nb_cargs + 1;
-    } else if (opc == INDEX_op_nopn) {
-      nb_args = nb_cargs = gen_old_opparam_buf[opparam_index];
-      nb_oargs = nb_iargs = 0;
-    } else {
-      nb_args = tcg_op_defs[opc].nb_args;
-      nb_oargs = tcg_op_defs[opc].nb_oargs;
-      nb_iargs = tcg_op_defs[opc].nb_iargs;
-      nb_cargs = tcg_op_defs[opc].nb_cargs;
-
-      /* Are any of the input/output args CC flags? */
-      for (x=0; x < nb_oargs; x++) if(check_cc_arg(gen_old_opparam_buf[opparam_index+x])) cond_used = 1;
-      //for (x=0; x < nb_iargs; x++) if(check_cc_arg(??)) cond_used = 1;
-    }
-    opparam_index += nb_args;
-
-    /* Check if we're using brcond* in this TB.  If so, don't
-      instrument this TB with jumps. */
-    switch(opc)
-    {
-      case INDEX_op_brcond_i32:
-      //case INDEX_op_setcond_i32:
-#if (TCG_TARGET_REG_BITS == 32)
-      case INDEX_op_brcond2_i32:
-      //case INDEX_op_setcond2_i32:
-#endif /* TCG_TARGET_REG_BITS */
-      case INDEX_op_brcond_i64:
-        cond_used = 1;
-        i = nb_opc;
-        break;
-    }
-  }
-  opparam_index = 0;
-  cond_used = 0; // AWH - Testing
-  //if (!cond_used) fprintf(stderr, "No cond_used in this TB\n");
-  //else fprintf(stderr, "COND_USED in this TB\n");
-#endif /* Remove cond check for now */
-#endif /* TCG_TAINT_BRANCHING */
-
-  /* Initialize the metadata that marks which opcodes are
-    immune to being optimized out.  By default, if TCG_TAINT_BRANCHING
-    is defined, none can be optimized out (all are set to 1).
-    As we copy in opcodes, if the gen_old_liveness_metadata 
-    for the new opcode shows that it is 0 (this opcode would 
-    be optimized out anyway), then we set this to 0. If
-    TCG_TAINT_BRANCHING is not defined, then all can be
-    optimized out (all are set to 0). */
-  for (i=0; i < METADATA_SIZE; i++)
-#ifdef TCG_TAINT_BRANCHING
-    gen_opc_opt_immune_metadata[i] = 1;
-#else
-    gen_opc_opt_immune_metadata[i] = 0;
-#endif /* TCG_TAINT_BRANCHING */
 
   /* Copy and instrument the opcodes that need taint tracking */
   while(opc_index < nb_opc) {
@@ -571,7 +305,7 @@ static inline int gen_taintcheck_insn(int search_pc)
        entries we need to put in the metadata buffers to keep
        everything in sync. */
     gen_old_opc_ptr = gen_opc_ptr;
-#ifdef USE_TCG_OPTIMIZATIONS
+#if 0 //defined(USE_TCG_OPTIMIZATIONS)
     /* Liveness check: If the opcode that we are going to instrument
       will be eliminated in a later liveness check (according to the
       metadata held in gen_old_liveness_metadata), then we won't
@@ -579,7 +313,9 @@ static inline int gen_taintcheck_insn(int search_pc)
     if(!gen_old_liveness_metadata[opc_index-1]) {
       /* Tell the REAL optimizer pass in tcg/tcg.c that it is OK
         to optimize this opcode out. */
+#ifdef TCG_TAINT_LOGGING
       gen_opc_opt_immune_metadata[opc_index-1] = 0;
+#endif /* TCG_TAINT_BRANCHING */
       goto skip_instrumentation;
     }
 #endif /* USE_TCG_OPTIMIZATIONS */
@@ -612,11 +348,6 @@ static inline int gen_taintcheck_insn(int search_pc)
         if (arg0) {
           tcg_gen_discard_tl(arg0);
         }
-#ifdef TCG_TAINT_BRANCHING
-        /* LHS now uninitialized */
-        if (orig0 >= tcg_ctx.nb_globals)
-          gen_opc_init_metadata[orig0] = 0;
-#endif /* TCG_TAINT_BRANCHING */
         break;
 
       case INDEX_op_call:      // Always bit taint
@@ -627,6 +358,9 @@ static inline int gen_taintcheck_insn(int search_pc)
         // [OP][# of args breakdown(const)][arg0(I/O][arg1(I/O)]...
         //    [argN(I)][# of args (const)]
 #if defined(TARGET_I386)
+#define HELPER_SECTION_THREE
+#include "helper_i386_check.h"
+#if 0 // AWH
         // Check if this is a call to an OUT helper function.
         // If so, we need to add in a ST IR to store the proper 
         // taint value in tempidx prior to the call.
@@ -671,6 +405,7 @@ static inline int gen_taintcheck_insn(int search_pc)
           // Clear the helper flag
           out_helper_func = 0;
         }
+#endif // AWH
 #endif /* TARGET_I386 */
         for (i=0; i < nb_oargs; i++) {
           arg0 = find_shadow_arg(gen_opparam_ptr[
@@ -683,10 +418,14 @@ static inline int gen_taintcheck_insn(int search_pc)
             // Check if this is a call to an IN helper function.
             // If so, we grab the tempidx after the function call.
 #ifdef TARGET_I386
+#define HELPER_SECTION_FOUR
+#include "helper_i386_check.h"
+#if 0 // AWH
             if (in_helper_func) {
               tcg_gen_ld32u_tl(arg0, cpu_env, offsetof(OurCPUState,tempidx));
               in_helper_func = 0;
             } else
+#endif // AWH
 #endif /* TARGET_I386 */
               tcg_gen_movi_i32(arg0, 0);
 #ifdef TCG_TAINT_BRANCHING
@@ -694,6 +433,24 @@ static inline int gen_taintcheck_insn(int search_pc)
             gen_opc_init_metadata[orig0] = 1;
 #endif /* TCG_TAINT_BRANCHING */
           }
+#ifdef TARGET_I386
+#define HELPER_SECTION_FIVE
+#include "helper_i386_check.h"
+#if 0 // AWH
+          if (cmpxchg_helper_func) 
+          {
+#if TCG_TARGET_REG_BITS == 32
+            t1 = tcg_temp_new_i32();
+            tcg_gen_movi_i32(t1, 0);
+#else
+            t1 = tcg_temp_new_i64();
+            tcg_gen_movi_i64(t1, 0);
+#endif /* TCG_TARGET_REG_BITS == 32 */
+            tcg_gen_st_tl(t1, cpu_env, offsetof(OurCPUState,taint_regs[R_EAX]));
+            cmpxchg_helper_func = 0;
+          }
+#endif // AWH
+#endif /* TARGET_I386 */
         }
         break;
 
@@ -715,42 +472,6 @@ static inline int gen_taintcheck_insn(int search_pc)
           /* Rewind the instruction stream */
           gen_opparam_ptr -= 5;
           gen_opc_ptr--;
-
-#ifdef TCG_TAINT_BRANCHING
-#ifdef BRANCH_DEPOSIT_I32
-          local_no_taint_label = gen_new_label();
-          local_complete_label = gen_new_label();
-          t0 = tcg_temp_new_i32();
-          t1 = tcg_temp_new_i32();
-
-          /* Has LHS has been initialized? */
-          if (!gen_opc_init_metadata[orig0]) {
-            if (arg1 && arg2)
-              tcg_gen_or_i32(t0, arg1, arg2);
-            else if (arg1)
-              tcg_gen_mov_i32(t0, arg1);
-            else if (arg2)
-              tcg_gen_mov_i32(t0, arg2);
-            else
-              tcg_gen_movi_i32(t0, 0);
-          } else {
-            if (arg1 && arg2) {
-              tcg_gen_or_i32(t1, arg0, arg1);
-              tcg_gen_or_i32(t0, t1, arg2);
-            }
-            else if (arg1)
-              tcg_gen_or_i32(t0, arg0, arg1);
-            else if (arg2)
-              tcg_gen_or_i32(t0, arg0, arg2);
-            else
-              tcg_gen_mov_i32(t0, arg0);
-          }
-          t_zero = tcg_temp_new_i32();
-          tcg_gen_movi_i32(t_zero, 0);
-          /* Skip logging/instrumentation if LHS and RHS don't have taint */
-          tcg_gen_local_brcond_i32(TCG_COND_EQ, t0, t_zero, local_no_taint_label);
-#endif /* BRANCH_DEPOSIT_I32 */
-#endif /* TCG_TAINT_BRANCHING */
 
 #ifdef TCG_LOGGING_TAINT
 #ifdef LOG_DEPOSIT_I32
@@ -778,15 +499,6 @@ static inline int gen_taintcheck_insn(int search_pc)
           // Handle general case
           else
             tcg_gen_deposit_tl(arg0, arg1, arg2, pos, len);
-#ifdef TCG_TAINT_BRANCHING
-#ifdef BRANCH_DEPOSIT_I32
-          tcg_gen_local_br(local_complete_label);
-          gen_local_set_label(local_no_taint_label);
-          tcg_gen_movi_i32(arg0, 0);
-          gen_local_set_label(local_complete_label);
-#endif /* BRANCH_DEPOSIT_I32 */
-          gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
 
           /* Reinsert the original IR */
           tcg_gen_deposit_i32(orig0, orig1, orig2, pos, len);
@@ -880,6 +592,9 @@ static inline int gen_taintcheck_insn(int search_pc)
         arg0 = find_shadow_arg(gen_opparam_ptr[-2]);
         if (arg0) {
 #ifdef TARGET_I386
+#define HELPER_SECTION_TWO
+#include "helper_i386_check.h"
+#if 0 // AWH
           /* Check if the constant is a helper function for IN* opcodes */
           if ( (gen_opparam_ptr[-1] == (tcg_target_ulong)helper_inb) ||
             (gen_opparam_ptr[-1] == (tcg_target_ulong)helper_inw) ||
@@ -896,6 +611,12 @@ static inline int gen_taintcheck_insn(int search_pc)
             out_helper_func = 1;
             //fprintf(stderr, "tcg_taint.c: movi_i32 out helper func\n");
           }
+          /* Check if the constant is a helper function for CMPXCHG */
+          else if (gen_opparam_ptr[-1] == (tcg_target_ulong)helper_DECAF_taint_cmpxchg)
+          {
+            cmpxchg_helper_func = 1;
+          }
+#endif
 #endif /* TARGET_I386 */
           /* Store opcode parms */
           orig0 = gen_opparam_ptr[-2];
@@ -904,26 +625,6 @@ static inline int gen_taintcheck_insn(int search_pc)
           /* Rewind the instruction stream */
           gen_opparam_ptr -= 2;
           gen_opc_ptr--;
-
-#ifdef TCG_TAINT_BRANCHING
-#ifdef BRANCH_MOVI_I32
-          local_no_taint_label = gen_new_label();
-          /* Skip logging/instrumentation if LHS has not yet been used */
-          if (!gen_opc_init_metadata[orig0]) {
-            /* LHS now initialized */
-            gen_opc_init_metadata[orig0] = 1;
-            tcg_gen_movi_i32(arg0, 0);
-            /* Reinsert original opcode */
-            tcg_gen_movi_i32(orig0, orig1);
-            break;
-          }
-            
-          /* Skip logging/instrumentation if LHS doesn't have taint */
-          t_zero = tcg_temp_new_i32();
-          tcg_gen_movi_i32(t_zero, 0);
-          tcg_gen_local_brcond_i32(TCG_COND_EQ, arg0, t_zero, local_no_taint_label);
-#endif /* BRANCH_MOVI_I32 */
-#endif /* TCG_TAINT_BRANCHING */
 
 #ifdef TCG_LOGGING_TAINT
 #ifdef LOG_MOVI_I32
@@ -937,12 +638,6 @@ static inline int gen_taintcheck_insn(int search_pc)
           /* Insert taint propagation */
           tcg_gen_movi_i32(arg0, 0);
 
-#ifdef TCG_TAINT_BRANCHING
-#ifdef BRANCH_MOVI_I32
-          gen_local_set_label(local_no_taint_label);
-#endif /* BRANCH_MOVI_I32 */
-          gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
           /* Reinsert original opcode */
           tcg_gen_movi_i32(orig0, orig1);
         }
@@ -960,37 +655,6 @@ static inline int gen_taintcheck_insn(int search_pc)
           gen_opparam_ptr -= 2;
           gen_opc_ptr--;
 
-#ifdef TCG_TAINT_BRANCHING
-#ifdef BRANCH_MOV_I32
-#ifdef ALLOW_BSLE // AWH - DEBUG
-if (block_count <= BLOCK_SKIP_LESS_EQUAL) goto skip1;
-#endif // ALLOW_BSLE
-#ifdef ALLOW_BSGE // AWH - DEBUG
-if (block_count >= BLOCK_SKIP_GREATER_EQUAL) goto skip1;
-#endif // ALLOW_BSGE
-#if 1 // AWH - Custom skip
-if (opc_index < 11) goto skip1;
-#endif
-          local_no_taint_label = gen_new_label();
-          local_complete_label = gen_new_label();
-          //if (!cond_used) {
-            t_zero = tcg_temp_new_i32();
-            tcg_gen_movi_i32(t_zero, 0);
-            /* Has LHS has been initialized? */
-            if (!gen_opc_init_metadata[orig0]) {
-              tcg_gen_local_brcond_i32(TCG_COND_EQ, arg1, t_zero, local_no_taint_label);
-            } else {
-              t0 = tcg_temp_new_i32();
-              tcg_gen_or_i32(t0, arg0, arg1);
-              /* Skip logging/instrumentation if LHS and RHS don't have taint */
-              tcg_gen_local_brcond_i32(TCG_COND_EQ, t0, t_zero, local_no_taint_label);
-            }
-          //}
-skip1:
-
-#endif /* BRANCH_MOV_I32 */
-#endif /* TCG_TAINT_BRANCHING */
-
 #ifdef TCG_LOGGING_TAINT
 #ifdef LOG_MOV_I32 
           /* Insert logging */
@@ -1004,31 +668,6 @@ skip1:
 
           /* Insert taint propagation */
           tcg_gen_mov_i32(arg0, arg1);
-
-#ifdef TCG_TAINT_BRANCHING
-#ifdef BRANCH_MOV_I32
-#ifdef ALLOW_BSLE // AWH - DEBUG
-if (block_count <= BLOCK_SKIP_LESS_EQUAL) goto skip2;
-#endif // ALLOW_BSLE
-#ifdef ALLOW_BSGE // AWH - DEBUG
-if (block_count >= BLOCK_SKIP_GREATER_EQUAL) goto skip2;
-#endif // ALLOW_BSGE
-#if 1 // AWH - Custom skip
-if (opc_index < 11) goto skip2;
-#endif
-          //if (cond_used) {
-          //  tcg_gen_movi_i32(arg0, 0); 
-          //} else 
-          //{
-            tcg_gen_local_br(local_complete_label);
-            gen_local_set_label(local_no_taint_label);
-            tcg_gen_movi_i32(arg0, 0);
-            gen_local_set_label(local_complete_label);
-          //}
-#endif /* BRANCH_MOV_I32 */
-skip2:
-          gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
 
           /* Reinsert original opcode */
           tcg_gen_mov_i32(orig0, orig1);
@@ -1484,10 +1123,6 @@ skip2:
             tcg_gen_mov_i32(t0, arg2);
           } else {
             tcg_gen_mov_i32(arg0, 0);
-#ifdef TCG_TAINT_BRANCHING
-            /* LHS now initialized */
-            gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
             /* Reinsert original opcode */
             tcg_gen_setcond_i32(orig0, orig1, orig2, orig3);
             break;
@@ -1500,11 +1135,6 @@ skip2:
           tcg_gen_movi_i32(t_zero, 0);
           tcg_gen_setcond_i32(TCG_COND_NE, t2, t0, t_zero);
           tcg_gen_neg_i32(arg0, t2);
-
-#ifdef TCG_TAINT_BRANCHING
-          /* LHS now initialized */
-          gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
 
           /* Reinsert original opcode */
           tcg_gen_setcond_i32(orig0, orig1, orig2, orig3);
@@ -1545,10 +1175,6 @@ skip2:
           /* Insert taint IR */
           if (!arg1 && !arg2) {
             tcg_gen_movi_i32(arg0, 0);
-#ifdef TCG_TAINT_BRANCHING
-            /* LHS now initialized */
-            gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
             /* Reinsert original opcode */
             tcg_gen_shl_i32(orig0, orig1, orig2);
             break;
@@ -1575,10 +1201,6 @@ skip2:
             tcg_gen_or_i32(arg0, t0, t2);
           } else
             tcg_gen_mov_i32(arg0, t2);
-#ifdef TCG_TAINT_BRANCHING
-          /* LHS now initialized */
-          gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
           /* Reinsert original opcode */
           tcg_gen_shl_i32(orig0, orig1, orig2);
         }
@@ -1616,10 +1238,6 @@ skip2:
           /* Insert taint IR */
           if (!arg1 && !arg2) {
             tcg_gen_movi_i32(arg0, 0);
-#ifdef TCG_TAINT_BRANCHING
-            /* LHS now initialized */
-            gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
             /* Reinsert original opcode */
             tcg_gen_shr_i32(orig0, orig1, orig2);
             break;
@@ -1646,10 +1264,6 @@ skip2:
             tcg_gen_or_i32(arg0, t0, t2);
           } else
             tcg_gen_mov_i32(arg0, t2);
-#ifdef TCG_TAINT_BRANCHING
-            /* LHS now initialized */
-            gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
           /* Reinsert original opcode */
           tcg_gen_shr_i32(orig0, orig1, orig2);
         }
@@ -1687,10 +1301,6 @@ skip2:
           /* Insert taint IR */
           if (!arg1 && !arg2) {
             tcg_gen_movi_i32(arg0, 0);
-#ifdef TCG_TAINT_BRANCHING
-            /* LHS now initialized */
-            gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
             /* Reinsert original opcode */
             tcg_gen_sar_i32(orig0, orig1, orig2);
             break;
@@ -1717,10 +1327,6 @@ skip2:
             tcg_gen_or_i32(arg0, t0, t2);
           } else
             tcg_gen_mov_i32(arg0, t2);
-#ifdef TCG_TAINT_BRANCHING
-          /* LHS now initialized */
-          gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
           /* Reinsert original opcode */
           tcg_gen_sar_i32(orig0, orig1, orig2);
         }
@@ -1759,10 +1365,6 @@ skip2:
           /* Insert tainting IR */
           if (!arg1 && !arg2) {
             tcg_gen_movi_i32(arg0, 0);
-#ifdef TCG_TAINT_BRANCHING
-            /* LHS now initialized */
-            gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
             /* Reinsert original opcode */
             tcg_gen_rotl_i32(orig0, orig1, orig2);
             break;
@@ -1789,10 +1391,6 @@ skip2:
             tcg_gen_or_i32(arg0, t0, t2);
           } else
             tcg_gen_mov_i32(arg0, t2);
-#ifdef TCG_TAINT_BRANCHING
-          /* LHS now initialized */
-          gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
           /* Reinsert original opcode */
           tcg_gen_rotl_i32(orig0, orig1, orig2);
         }
@@ -1830,10 +1428,6 @@ skip2:
           /* Insert tainting IR */
           if (!arg1 && !arg2) {
             tcg_gen_movi_i32(arg0, 0);
-#ifdef TCG_TAINT_BRANCHING
-            /* LHS now initialized */
-            gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
             /* Reinsert original opcode */
             tcg_gen_rotr_i32(orig0, orig1, orig2);
             break;
@@ -1859,17 +1453,13 @@ skip2:
             tcg_gen_or_i32(arg0, t0, t2);
           } else
             tcg_gen_mov_i32(arg0, t2);
-#ifdef TCG_TAINT_BRANCHING
-          /* LHS now initialized */
-          gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
           /* Reinsert original opcode */
           tcg_gen_rotr_i32(orig0, orig1, orig2);
         }
         break;
 
 #endif /* TCG_TARGET_HAS_rot_i32 */
-#ifdef BITWISE_TAINT
+#ifdef TCG_BITWISE_TAINT
 #ifdef TAINT_EXPENSIVE_ADDSUB
  // AWH - expensiveAddSub() for add_i32/or_i32 are buggy, use cheap one
       /* T0 = (T1 | T2) | ((V1_min + V2_min) ^ (V1_max + V2_max)) */
@@ -2025,10 +1615,6 @@ skip2:
 #endif /* TCG_LOGGING_TAINT */
           if (!arg1 && !arg2) {
             tcg_gen_movi_i32(arg0, 0);
-#ifdef TCG_TAINT_BRANCHING
-            /* LHS now initialized */
-            gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
             /* Reinsert original opcode */
             tcg_gen_mul_i32(orig0, orig1, orig2);
             break;
@@ -2047,10 +1633,6 @@ skip2:
           t1 = tcg_temp_new_i32(); 
           tcg_gen_neg_i32(t1, t0); // (-s32)
           tcg_gen_or_i32(arg0, t0, t1); // (s32 | (-s32)) -> vLo32
-#ifdef TCG_TAINT_BRANCHING
-          /* LHS now initialized */
-          gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
           /* Reinsert original opcode */
           tcg_gen_mul_i32(orig0, orig1, orig2);
         }
@@ -2084,39 +1666,6 @@ skip2:
           t2 = tcg_temp_new_i32();
           t3 = tcg_temp_new_i32();
 
-#ifdef TCG_TAINT_BRANCHING
-#ifdef BRANCH_AND_I32
-          local_no_taint_label = gen_new_label();
-          local_complete_label = gen_new_label();
-
-          /* Has LHS has been initialized? */
-          if (!gen_opc_init_metadata[orig2]) {
-            if (arg1 && arg2)
-              tcg_gen_or_i32(t0, arg1, arg2);
-            else if (arg1)
-              tcg_gen_mov_i32(t0, arg1);
-            else if (arg2)
-              tcg_gen_mov_i32(t0, arg2);
-            else
-              tcg_gen_movi_i32(t0, 0);
-          } else {
-            if (arg1 && arg2) {
-              tcg_gen_or_i32(t1, arg0, arg1);
-              tcg_gen_or_i32(t0, t1, arg2);
-            }
-            else if (arg1)
-              tcg_gen_or_i32(t0, arg0, arg1);
-            else if (arg2)
-              tcg_gen_or_i32(t0, arg0, arg2);
-            else
-              tcg_gen_mov_i32(t0, arg0);
-          }
-          /* Skip logging/instrumentation if LHS and RHS don't have taint */
-          t_zero = tcg_temp_new_i32();
-          tcg_gen_movi_i32(t_zero, 0);
-          tcg_gen_local_brcond_i32(TCG_COND_EQ, t0, t_zero, local_no_taint_label);
-#endif /* BRANCH_AND_I32 */
-#endif /* TCG_TAINT_BRANCHING */
           /* T1 -> arg1
              V1 -> gen_opparam_ptr[-2]
              T2 -> arg2
@@ -2149,15 +1698,6 @@ skip2:
           // OR it all together
           tcg_gen_or_i32(t1, t2, t3);
           tcg_gen_or_i32(arg0, t0, t1);
-#ifdef TCG_TAINT_BRANCHING
-#ifdef BRANCH_AND_I32
-          tcg_gen_local_br(local_complete_label);
-          gen_local_set_label(local_no_taint_label);
-          tcg_gen_movi_i32(arg0, 0);
-          gen_local_set_label(local_complete_label);
-#endif /* BRANCH_AND_I32 */
-          gen_opc_init_metadata[orig2] = 1;
-#endif /* TCG_TAINT_BRANCHING */
 
           /* Reinsert original opcode */
           tcg_gen_and_i32(orig2, orig1, orig0);
@@ -2189,25 +1729,7 @@ skip2:
           t1 = tcg_temp_new_i32();
           t2 = tcg_temp_new_i32();
           t3 = tcg_temp_new_i32();
-#ifdef TCG_TAINT_BRANCHING
-#ifdef BRANCH_OR_I32
-          local_no_taint_label = gen_new_label();
-          local_complete_label = gen_new_label();
 
-          /* Has LHS has been initialized? */
-          if (!gen_opc_init_metadata[orig2]) {
-            tcg_gen_or_i32(t0, arg1, arg2);
-            gen_opc_init_metadata[orig2] = 1;
-          } else {
-            tcg_gen_or_i32(t1, arg0, arg1);
-            tcg_gen_or_i32(t0, t1, arg2);
-          }
-          /* Skip logging/instrumentation if LHS and RHS don't have taint */
-          t_zero = tcg_temp_new_i32();
-          tcg_gen_movi_i32(t_zero, 0);
-          tcg_gen_local_brcond_i32(TCG_COND_EQ, t0, t_zero, local_no_taint_label);
-#endif /* BRANCH_OR_I32 */
-#endif /* TCG_TAINT_BRANCHING */
           /* T1 -> arg1
              V1 -> gen_opparam_ptr[-2]
              T2 -> arg2
@@ -2243,15 +1765,7 @@ skip2:
           // OR it all together
           tcg_gen_or_i32(t3, t0, t1);
           tcg_gen_or_i32(arg0, t2, t3);
-#ifdef TCG_TAINT_BRANCHING
-#ifdef BRANCH_OR_I32
-          tcg_gen_local_br(local_complete_label);
-          gen_local_set_label(local_no_taint_label);
-          tcg_gen_movi_i32(arg0, 0);
-          gen_local_set_label(local_complete_label);
-#endif /* BRANCH_OR_I32 */
-          gen_opc_init_metadata[orig2] = 1;
-#endif /* TCG_TAINT_BRANCHING */
+
           /* Reinsert original opcode */
           tcg_gen_or_i32(orig2, orig1, orig0);
         }
@@ -2330,11 +1844,6 @@ skip2:
           t_zero = tcg_temp_new_i32();
           tcg_gen_movi_i32(t_zero, 0);
           tcg_gen_setcond_i32(TCG_COND_NE, t2, t0, t_zero);
-#ifdef TCG_TAINT_BRANCHING
-          /* LHS now initialized */
-          gen_opc_init_metadata[orig0] = 1;
-          gen_opc_init_metadata[orig1] = 1;
-#endif /* TCG_TAINT_BRANCHING */
           tcg_gen_neg_i32(arg0, t2);
           tcg_gen_neg_i32(arg1, t2);
         }
@@ -2358,11 +1867,6 @@ skip2:
           orig5 = gen_opparam_ptr[-1];
 
           if (!(arg2 || arg3 || arg4 || arg5)) {
-#ifdef TCG_TAINT_BRANCHING
-            /* LHS now initialized */
-            gen_opc_init_metadata[orig0] = 1;
-            gen_opc_init_metadata[orig1] = 1;
-#endif /* TCG_TAINT_BRANCHING */
             tcg_gen_movi_i32(arg0, 0);
             tcg_gen_movi_i32(arg1, 0);
             break;
@@ -2400,11 +1904,6 @@ skip2:
           tcg_gen_setcond_i32(TCG_COND_NE, t2, t0, t_zero); // Reuse t2
           tcg_gen_neg_i32(arg0, t2);
           tcg_gen_neg_i32(arg1, t2);
-#ifdef TCG_TAINT_BRANCHING
-          /* LHS now initialized */
-          gen_opc_init_metadata[orig0] = 1;
-          gen_opc_init_metadata[orig1] = 1;
-#endif /* TCG_TAINT_BRANCHING */
         }
         break;
 
@@ -2427,9 +1926,6 @@ skip2:
             tcg_gen_mov_i32(arg0, arg2);
           else
             tcg_gen_movi_i32(arg0, 0);
-#ifdef TCG_TAINT_BRANCHING
-          gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
         }
         break;
 
@@ -2465,9 +1961,6 @@ skip2:
           tcg_gen_movi_i32(t_zero, 0);
           tcg_gen_setcond_i32(TCG_COND_NE, t2, t0, t_zero);
           tcg_gen_neg_i32(arg0, t2);
-#ifdef TCG_TAINT_BRANCHING
-          gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
 
         }
         break;
@@ -2490,10 +1983,6 @@ skip2:
           /* No shadows for any inputs */
           if (!(arg2 || arg3 || arg4))
           {
-#ifdef TCG_TAINT_BRANCHING
-            gen_opc_init_metadata[orig0] = 1;
-            gen_opc_init_metadata[orig1] = 1;
-#endif /* TCG_TAINT_BRANCHING */
             tcg_gen_movi_i32(arg0, 0);
             tcg_gen_movi_i32(arg1, 0);
             break;
@@ -2523,10 +2012,6 @@ skip2:
           tcg_gen_setcond_i32(TCG_COND_NE, t0, t2, t_zero);
           tcg_gen_neg_i32(arg0, t0);
           tcg_gen_neg_i32(arg1, t0);
-#ifdef TCG_TAINT_BRANCHING
-          gen_opc_init_metadata[orig0] = 1;
-          gen_opc_init_metadata[orig1] = 1;
-#endif /* TCG_TAINT_BRANCHING */
         }
         break;
 #endif /* TCG_TARGET_HAS_div*_i32 */
@@ -2542,9 +2027,6 @@ skip2:
             tcg_gen_ext8s_i32(arg0, arg1);
           else
             tcg_gen_movi_i32(arg0, 0);
-#ifdef TCG_TAINT_BRANCHING
-          gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
         }
         break;
 #endif /* TCG_TARGET_HAS_ext8s_i32 */
@@ -2559,9 +2041,6 @@ skip2:
             tcg_gen_ext16s_i32(arg0, arg1);
           else
             tcg_gen_movi_i32(arg0, 0);
-#ifdef TCG_TAINT_BRANCHING
-          gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
         }
         break;
 #endif /* TCG_TARGET_HAS_ext16s_i32 */
@@ -2577,9 +2056,6 @@ skip2:
             tcg_gen_ext8u_i32(arg0, arg1);
           else
             tcg_gen_movi_i32(arg0, 0);
-#ifdef TCG_TAINT_BRANCHING
-          gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
         }
         break;
 #endif /* TCG_TARGET_HAS_ext8u_i32 */
@@ -2595,9 +2071,6 @@ skip2:
             tcg_gen_ext16u_i32(arg0, arg1);
           else
             tcg_gen_movi_i32(arg0, 0);
-#ifdef TCG_TAINT_BRANCHING
-          gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
         }
         break;
 #endif /* TCG_TARGET_HAS_ext16u_i32 */
@@ -2613,9 +2086,6 @@ skip2:
             tcg_gen_bswap16_i32(arg0, arg1);
           else
             tcg_gen_movi_i32(arg0, 0);
-#ifdef TCG_TAINT_BRANCHING
-          gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
         }
         break;
 #endif /* TCG_TARGET_HAS_bswap16_i32 */
@@ -2631,9 +2101,6 @@ skip2:
             tcg_gen_bswap32_i32(arg0, arg1);
           else
             tcg_gen_movi_i32(arg0, 0);
-#ifdef TCG_TAINT_BRANCHING
-          gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
         }
         break;
 #endif /* TCG_TARGET_HAS_bswap32_i32 */
@@ -2649,9 +2116,6 @@ skip2:
             tcg_gen_mov_i32(arg0, arg1);
           else
             tcg_gen_movi_i32(arg0, 0);
-#ifdef TCG_TAINT_BRANCHING
-          gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
         }
         break;
 #endif /* TCG_TARGET_HAS_not_i32 */
@@ -2667,9 +2131,6 @@ skip2:
             tcg_gen_mov_i32(arg0, arg1);
           else
             tcg_gen_movi_i32(arg0, 0);
-#ifdef TCG_TAINT_BRANCHING
-          gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
         }
         break;
 
@@ -2679,6 +2140,9 @@ skip2:
         arg0 = find_shadow_arg(gen_opparam_ptr[-2]);
         if (arg0) {
 #ifdef TARGET_I386
+#define HELPER_SECTION_TWO
+#include "helper_i386_check.h"
+#if 0 // AWH
           /* Check if the constant is a helper function for IN* opcodes */
           if ( (gen_opparam_ptr[-1] == (tcg_target_ulong)helper_inb) ||
             (gen_opparam_ptr[-1] == (tcg_target_ulong)helper_inw) ||
@@ -2690,6 +2154,11 @@ skip2:
             (gen_opparam_ptr[-1] == (tcg_target_ulong)helper_outw) ||
             (gen_opparam_ptr[-1] == (tcg_target_ulong)helper_outl) )
             out_helper_func = 1;
+
+          /* Check if the constant is the helper function for CMPXCHG */
+          else if (gen_opparam_ptr[-1] == (tcg_target_ulong)helper_DECAF_taint_cmpxchg)
+            cmpxchg_helper_func = 1;
+#endif // AWH
 #endif /* TARGET_I386 */
           tcg_gen_movi_i64(arg0, 0);
         }
@@ -3517,28 +2986,22 @@ skip2:
       case INDEX_op_st32_i64:
       case INDEX_op_st_i64:
         DUMMY_TAINT(nb_oargs, nb_args);
-      /* check eip,its value and taint value*/
-#ifdef LOG_TAINTED_EIP
-	    arg0 = gen_opparam_ptr[-3];
-        arg1 = gen_opparam_ptr[-2];
-        arg2 = gen_opparam_ptr[-1];
-#if defined(TARGET_I386)
-        if(/*arg0 == cpu_T[0] && */arg2 == offsetof(CPUState, eip)) {
-#elif defined(TARGET_ARM)
-        if(arg2 == offsetof(CPUState, regs[15])) {
-#elif defined(TARGET_MIPS)
-        if(arg2 == (offsetof(CPUState, active_tc) + offsetof(TCState, gpr[29]))) {
-#endif /* TARGET_I386/ARM */
-        	TCGv shadow = shadow_arg[arg0];
-        	if (shadow != 0) {
-        		set_con_i32(0, arg0);
-        		set_con_i32(1, shadow);
-        		tcg_gen_helperN(helper_DECAF_invoke_eip_check_callback, 0, 0, TCG_CALL_DUMMY_ARG, 2, helper_arg_array);
-        	}
-        }
-#endif
         break; /* No taint info propagated (register liveness gets these) */
+      case INDEX_op_DECAF_checkeip:
+    	  if (DECAF_is_callback_needed(DECAF_EIP_CHECK_CB)){
+				arg0 = gen_opparam_ptr[-1];//target eip
+				arg1 = gen_opparam_ptr[-2];//source eip
+				TCGv shadow = shadow_arg[arg0];
+				if (shadow != 0) {
+					set_con_i32(0, arg1);
+					set_con_i32(1, arg0);
+					set_con_i32(2, shadow);
+					tcg_gen_helperN(helper_DECAF_invoke_eip_check_callback, 0,
+							0, TCG_CALL_DUMMY_ARG, 3, helper_arg_array);
+				}
+    	  }
 
+    	  break;
       default:
         fprintf(stderr, "gen_taintcheck_insn() -> UNKNOWN %d (%s)\n", opc, tcg_op_defs[opc].name);
         fprintf(stderr, "(%s)\n", (tcg_op_defs[opc]).name);
@@ -3594,7 +3057,7 @@ int retVal;
 
     return(retVal);
 }
-#ifdef USE_TCG_OPTIMIZATIONS
+#if 0 //defined(USE_TCG_OPTIMIZATIONS)
 static void build_liveness_metadata(TCGContext *s)
 {
     int i, op_index, nb_args, nb_iargs, nb_oargs, arg, nb_ops;

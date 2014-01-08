@@ -84,7 +84,7 @@ typedef struct elf_internal_ehdr {
 
 /* Program header */
 
-struct elf_internal_phdr {
+typedef struct elf_internal_phdr {
   unsigned long	p_type;			/* Identifies program segment type */
   unsigned long	p_flags;		/* Segment flags */
   bfd_vma	p_offset;		/* Segment file offset */
@@ -93,9 +93,7 @@ struct elf_internal_phdr {
   bfd_vma	p_filesz;		/* Segment size in file */
   bfd_vma	p_memsz;		/* Segment size in memory */
   bfd_vma	p_align;		/* Segment alignment, file & memory */
-};
-
-typedef struct elf_internal_phdr Elf_Internal_Phdr;
+} Elf_Internal_Phdr;
 
 /* Section header */
 
@@ -118,7 +116,7 @@ typedef struct elf_internal_shdr {
 
 /* Symbol table entry */
 
-struct elf_internal_sym {
+typedef struct elf_internal_sym {
   bfd_vma	st_value;		/* Value of the symbol */
   bfd_vma	st_size;		/* Associated symbol size */
   unsigned long	st_name;		/* Symbol name, index in string tbl */
@@ -126,20 +124,7 @@ struct elf_internal_sym {
   unsigned char	st_other;		/* Visibilty, and target specific */
   unsigned char st_target_internal;	/* Internal-only information */
   unsigned int  st_shndx;		/* Associated section index */
-};
-
-typedef struct elf_internal_sym Elf_Internal_Sym;
-
-/* Note segments */
-
-typedef struct elf_internal_note {
-  unsigned long	namesz;			/* Size of entry's owner string */
-  unsigned long	descsz;			/* Size of the note descriptor */
-  unsigned long	type;			/* Interpretation of the descriptor */
-  char *	namedata;		/* Start of the name+desc data */
-  char *	descdata;		/* Start of the desc data */
-  bfd_vma	descpos;		/* File offset of the descdata */
-} Elf_Internal_Note;
+} Elf_Internal_Sym;
 
 /* Relocation Entries */
 
@@ -161,77 +146,6 @@ typedef struct elf_internal_dyn {
   } d_un;
 } Elf_Internal_Dyn;
 
-/* This structure appears in a SHT_GNU_verdef section.  */
-
-typedef struct elf_internal_verdef {
-  unsigned short vd_version;	/* Version number of structure.  */
-  unsigned short vd_flags;	/* Flags (VER_FLG_*).  */
-  unsigned short vd_ndx;	/* Version index.  */
-  unsigned short vd_cnt;	/* Number of verdaux entries.  */
-  unsigned long	 vd_hash;	/* Hash of name.  */
-  unsigned long	 vd_aux;	/* Offset to verdaux entries.  */
-  unsigned long	 vd_next;	/* Offset to next verdef.  */
-
-  /* These fields are set up when BFD reads in the structure.  FIXME:
-     It would be cleaner to store these in a different structure.  */
-  bfd			      *vd_bfd;		/* BFD.  */
-  const char		      *vd_nodename;	/* Version name.  */
-  struct elf_internal_verdef  *vd_nextdef;	/* vd_next as pointer.  */
-  struct elf_internal_verdaux *vd_auxptr;	/* vd_aux as pointer.  */
-  unsigned int		       vd_exp_refno;	/* Used by the linker.  */
-} Elf_Internal_Verdef;
-
-/* This structure appears in a SHT_GNU_verdef section.  */
-
-typedef struct elf_internal_verdaux {
-  unsigned long vda_name;	/* String table offset of name.  */
-  unsigned long vda_next;	/* Offset to next verdaux.  */
-
-  /* These fields are set up when BFD reads in the structure.  FIXME:
-     It would be cleaner to store these in a different structure.  */
-  const char *vda_nodename;			/* vda_name as pointer.  */
-  struct elf_internal_verdaux *vda_nextptr;	/* vda_next as pointer.  */
-} Elf_Internal_Verdaux;
-
-/* This structure appears in a SHT_GNU_verneed section.  */
-
-typedef struct elf_internal_verneed {
-  unsigned short vn_version;	/* Version number of structure.  */
-  unsigned short vn_cnt;	/* Number of vernaux entries.  */
-  unsigned long	 vn_file;	/* String table offset of library name.  */
-  unsigned long	 vn_aux;	/* Offset to vernaux entries.  */
-  unsigned long	 vn_next;	/* Offset to next verneed.  */
-
-  /* These fields are set up when BFD reads in the structure.  FIXME:
-     It would be cleaner to store these in a different structure.  */
-  bfd			      *vn_bfd;		/* BFD.  */
-  const char                  *vn_filename;	/* vn_file as pointer.  */
-  struct elf_internal_vernaux *vn_auxptr;	/* vn_aux as pointer.  */
-  struct elf_internal_verneed *vn_nextref;	/* vn_nextref as pointer.  */
-} Elf_Internal_Verneed;
-
-/* This structure appears in a SHT_GNU_verneed section.  */
-
-typedef struct elf_internal_vernaux {
-  unsigned long	 vna_hash;	/* Hash of dependency name.  */
-  unsigned short vna_flags;	/* Flags (VER_FLG_*).  */
-  unsigned short vna_other;	/* Unused.  */
-  unsigned long	 vna_name;	/* String table offset to version name.  */
-  unsigned long	 vna_next;	/* Offset to next vernaux.  */
-
-  /* These fields are set up when BFD reads in the structure.  FIXME:
-     It would be cleaner to store these in a different structure.  */
-  const char                  *vna_nodename;	/* vna_name as pointer.  */
-  struct elf_internal_vernaux *vna_nextptr;	/* vna_next as pointer.  */
-} Elf_Internal_Vernaux;
-
-/* This structure appears in a SHT_GNU_versym section.  This is not a
-   standard ELF structure; ELF just uses Elf32_Half.  */
-
-typedef struct elf_internal_versym {
-  unsigned short vs_vers;
-} Elf_Internal_Versym;
-
 /* Structure for syminfo section.  */
 typedef struct
 {
@@ -239,122 +153,5 @@ typedef struct
   unsigned short int	si_flags;
 } Elf_Internal_Syminfo;
 
-/* This structure appears on the stack and in NT_AUXV core file notes.  */
-typedef struct
-{
-  bfd_vma a_type;
-  bfd_vma a_val;
-} Elf_Internal_Auxv;
-
-
-/* This structure is used to describe how sections should be assigned
-   to program segments.  */
-
-struct elf_segment_map
-{
-  /* Next program segment.  */
-  struct elf_segment_map *next;
-  /* Program segment type.  */
-  unsigned long p_type;
-  /* Program segment flags.  */
-  unsigned long p_flags;
-  /* Program segment physical address.  */
-  bfd_vma p_paddr;
-  /* Program segment virtual address offset from section vma.  */
-  bfd_vma p_vaddr_offset;
-  /* Program segment alignment.  */
-  bfd_vma p_align;
-  /* Segment size in file and memory */
-  bfd_vma p_size;
-  /* Required size of filehdr + phdrs, if non-zero */
-  bfd_vma header_size;
-  /* Whether the p_flags field is valid; if not, the flags are based
-     on the section flags.  */
-  unsigned int p_flags_valid : 1;
-  /* Whether the p_paddr field is valid; if not, the physical address
-     is based on the section lma values.  */
-  unsigned int p_paddr_valid : 1;
-  /* Whether the p_align field is valid; if not, PT_LOAD segment
-     alignment is based on the default maximum page size.  */
-  unsigned int p_align_valid : 1;
-  /* Whether the p_size field is valid; if not, the size are based
-     on the section sizes.  */
-  unsigned int p_size_valid : 1;
-  /* Whether this segment includes the file header.  */
-  unsigned int includes_filehdr : 1;
-  /* Whether this segment includes the program headers.  */
-  unsigned int includes_phdrs : 1;
-  /* Number of sections (may be 0).  */
-  unsigned int count;
-  /* Sections.  Actual number of elements is in count field.  */
-  asection *sections[1];
-};
-
-/* .tbss is special.  It doesn't contribute memory space to normal
-   segments and it doesn't take file space in normal segments.  */
-#define ELF_TBSS_SPECIAL(sec_hdr, segment)			\
-  (((sec_hdr)->sh_flags & SHF_TLS) != 0				\
-   && (sec_hdr)->sh_type == SHT_NOBITS				\
-   && (segment)->p_type != PT_TLS)
-
-#define ELF_SECTION_SIZE(sec_hdr, segment)			\
-  (ELF_TBSS_SPECIAL(sec_hdr, segment) ? 0 : (sec_hdr)->sh_size)
-
-/* Decide if the section SEC_HDR is in SEGMENT.  If CHECK_VMA, then
-   VMAs are checked for alloc sections.  If STRICT, then a zero size
-   section won't match at the end of a segment, unless the segment
-   is also zero size.  Regardless of STRICT and CHECK_VMA, zero size
-   sections won't match at the start or end of PT_DYNAMIC, unless
-   PT_DYNAMIC is itself zero sized.  */
-#define ELF_SECTION_IN_SEGMENT_1(sec_hdr, segment, check_vma, strict)	\
-  ((/* Only PT_LOAD, PT_GNU_RELRO and PT_TLS segments can contain	\
-       SHF_TLS sections.  */						\
-    ((((sec_hdr)->sh_flags & SHF_TLS) != 0)				\
-     && ((segment)->p_type == PT_TLS					\
-	 || (segment)->p_type == PT_GNU_RELRO				\
-	 || (segment)->p_type == PT_LOAD))				\
-    /* PT_TLS segment contains only SHF_TLS sections, PT_PHDR no	\
-       sections at all.  */						\
-    || (((sec_hdr)->sh_flags & SHF_TLS) == 0				\
-	&& (segment)->p_type != PT_TLS					\
-	&& (segment)->p_type != PT_PHDR))				\
-   /* Any section besides one of type SHT_NOBITS must have file		\
-      offsets within the segment.  */					\
-   && ((sec_hdr)->sh_type == SHT_NOBITS					\
-       || ((bfd_vma) (sec_hdr)->sh_offset >= (segment)->p_offset	\
-	   && (!(strict)						\
-	       || ((sec_hdr)->sh_offset - (segment)->p_offset		\
-		   <= (segment)->p_filesz - 1))				\
-	   && (((sec_hdr)->sh_offset - (segment)->p_offset		\
-		+ ELF_SECTION_SIZE(sec_hdr, segment))			\
-	       <= (segment)->p_filesz)))				\
-   /* SHF_ALLOC sections must have VMAs within the segment.  */		\
-   && (!(check_vma)							\
-       || ((sec_hdr)->sh_flags & SHF_ALLOC) == 0			\
-       || ((sec_hdr)->sh_addr >= (segment)->p_vaddr			\
-	   && (!(strict)						\
-	       || ((sec_hdr)->sh_addr - (segment)->p_vaddr		\
-		   <= (segment)->p_memsz - 1))				\
-	   && (((sec_hdr)->sh_addr - (segment)->p_vaddr			\
-		+ ELF_SECTION_SIZE(sec_hdr, segment))			\
-	       <= (segment)->p_memsz)))					\
-   /* No zero size sections at start or end of PT_DYNAMIC.  */		\
-   && ((segment)->p_type != PT_DYNAMIC					\
-       || (sec_hdr)->sh_size != 0					\
-       || (segment)->p_memsz == 0					\
-       || (((sec_hdr)->sh_type == SHT_NOBITS				\
-	    || ((bfd_vma) (sec_hdr)->sh_offset > (segment)->p_offset	\
-	        && ((sec_hdr)->sh_offset - (segment)->p_offset		\
-		    < (segment)->p_filesz)))				\
-	   && (((sec_hdr)->sh_flags & SHF_ALLOC) == 0			\
-	       || ((sec_hdr)->sh_addr > (segment)->p_vaddr		\
-		   && ((sec_hdr)->sh_addr - (segment)->p_vaddr		\
-		       < (segment)->p_memsz))))))
-
-#define ELF_SECTION_IN_SEGMENT(sec_hdr, segment)			\
-  (ELF_SECTION_IN_SEGMENT_1 (sec_hdr, segment, 1, 0))
-
-#define ELF_SECTION_IN_SEGMENT_STRICT(sec_hdr, segment)			\
-  (ELF_SECTION_IN_SEGMENT_1 (sec_hdr, segment, 1, 1))
 
 #endif /* _ELF_INTERNAL_H */

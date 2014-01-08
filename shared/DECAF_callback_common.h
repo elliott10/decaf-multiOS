@@ -145,8 +145,9 @@ typedef struct _DECAF_Mem_Write_Params
 }DECAF_Mem_Write_Params;
 typedef struct _DECAF_EIP_Check_Params
 {
-	uint32_t eip;
-        uint32_t eip_taint;
+	gva_t source_eip;
+	gva_t target_eip;
+    gva_t target_eip_taint;
 }DECAF_EIP_Check_Params;
 typedef struct _DECAF_Keystroke_Params
 {

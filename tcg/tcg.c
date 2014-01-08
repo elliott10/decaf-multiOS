@@ -23,10 +23,8 @@
  */
 
 /* define it to use liveness analysis (better code) */
-#if 0 // AWH - TCG_TAINT - DEBUG
 #define USE_LIVENESS_ANALYSIS
 #define USE_TCG_OPTIMIZATIONS
-#endif // AWH
 
 #include "config.h"
 
@@ -894,12 +892,11 @@ void tcg_dump_ops(TCGContext *s, FILE *outfile)
     int i, k, nb_oargs, nb_iargs, nb_cargs, first_insn;
     const TCGOpDef *def;
     char buf[128];
-    int op_index = 0; // AWH
+
     first_insn = 1;
     opc_ptr = gen_opc_buf;
     args = gen_opparam_buf;
     while (opc_ptr < gen_opc_ptr) {
-        fprintf(outfile, "%d: ", op_index); // AWH
         c = *opc_ptr++;
         def = &tcg_op_defs[c];
         if (c == INDEX_op_debug_insn_start) {
@@ -1000,19 +997,10 @@ void tcg_dump_ops(TCGContext *s, FILE *outfile)
             }
             switch (c) {
             case INDEX_op_brcond_i32:
-#if 0 //def CONFIG_TCG_TAINT
-            case INDEX_op_local_brcond_i32:
-#endif /* CONFIG_TCG_TAINT */
 #if TCG_TARGET_REG_BITS == 32
             case INDEX_op_brcond2_i32:
-#if 0 //def CONFIG_TCG_TAINT
-            case INDEX_op_local_brcond2_i32:
-#endif /* CONFIG_TCG_TAINT */
 #elif TCG_TARGET_REG_BITS == 64
             case INDEX_op_brcond_i64:
-#if 0 //def CONFIG_TCG_TAINT
-            case INDEX_op_local_brcond_i64:
-#endif /* CONFIG_TCG_TAINT */
 #endif
             case INDEX_op_setcond_i32:
 #if TCG_TARGET_REG_BITS == 32
@@ -1039,7 +1027,6 @@ void tcg_dump_ops(TCGContext *s, FILE *outfile)
         }
         fprintf(outfile, "\n");
         args += nb_iargs + nb_oargs + nb_cargs;
-        op_index++; // AWH
     }
 }
 
@@ -1287,16 +1274,16 @@ if (!presweep)
 
                 /* pure functions can be removed if their result is not
                    used */
+#ifdef CONFIG_TCG_TAINT
+                if (!presweep && (call_flags & TCG_CALL_PURE)) {
+#else
                 if (call_flags & TCG_CALL_PURE) {
+#endif /* CONFIG_TCG_TAINT */
                     for(i = 0; i < nb_oargs; i++) {
                         arg = args[i];
                         if (!dead_temps[arg])
                             goto do_not_remove_call;
                     }
-#ifdef CONFIG_TCG_TAINT
-                    if (gen_opc_opt_immune_metadata[op_index])
-                        goto do_not_remove_call;
-#endif /* CONFIG_TCG_TAINT */
                     tcg_set_nop(s, gen_opc_buf + op_index, 
                                 args - 1, nb_args);
                 } else {
@@ -1328,7 +1315,7 @@ if (!presweep)
                         }
                     }
 #ifdef CONFIG_TCG_TAINT
-  if (!presweep)
+if (!presweep)
 #endif /* CONFIG_TCG_TAINT */
                     s->op_dead_args[op_index] = dead_args;
                 }
@@ -1340,11 +1327,6 @@ if (!presweep)
             /* mark end of basic block */
             tcg_la_bb_end(s, dead_temps);
             break;
-#if 0 //def CONFIG_TCG_TAINT
-        case INDEX_op_local_set_label:
-            args--;
-            break;
-#endif /* CONFIG_TCG_TAINT */
         case INDEX_op_debug_insn_start:
             args -= def->nb_args;
             break;
@@ -1374,10 +1356,6 @@ if (!presweep)
                     if (!dead_temps[arg])
                         goto do_not_remove;
                 }
-#ifdef CONFIG_TCG_TAINT
-                if (gen_opc_opt_immune_metadata[op_index])
-                    goto do_not_remove;
-#endif /* CONFIG_TCG_TAINT */
                 tcg_set_nop(s, gen_opc_buf + op_index, args, def->nb_args);
 #ifdef CONFIG_PROFILER
                 s->del_op_count++;
@@ -1426,11 +1404,7 @@ if (!presweep)
 }
 #else
 /* dummy liveness analysis */
-#ifdef CONFIG_TCG_TAINT
-/*static*/ void tcg_liveness_analysis(TCGContext *s, int presweep)
-#else
 static void tcg_liveness_analysis(TCGContext *s)
-#endif /* CONFIG_TCG_TAINT */
 {
     int nb_ops;
     nb_ops = gen_opc_ptr - gen_opc_buf;
@@ -2196,9 +2170,6 @@ static inline int tcg_gen_code_common(TCGContext *s, uint8_t *gen_code_buf,
             break;
         case INDEX_op_set_label:
             tcg_reg_alloc_bb_end(s, s->reserved_regs);
-#if 0 //def CONFIG_TCG_TAINT
-        case INDEX_op_local_set_label:
-#endif /* CONFIG_TCG_TAINT */
             tcg_out_label(s, args[0], (long)s->code_ptr);
             break;
         case INDEX_op_call:

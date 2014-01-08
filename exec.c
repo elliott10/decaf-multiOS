@@ -80,6 +80,10 @@
 #define SMC_BITMAP_USE_THRESHOLD 10
 
 #ifdef CONFIG_TCG_IR_LOG
+/* AWH - Additional debug insns, callbacks, etc. get added into TBs,
+  increasing their size beyond the bare minimum.  So, add some padding
+  to avoid overflows. */
+#define TCG_IR_LOG_PADDING 48
 static uint16_t *gDECAF_gen_opc_buf;
 #if TCG_TARGET_REG_BITS == 32
 uint32_t *gDECAF_gen_opparam_buf;
@@ -87,7 +91,7 @@ uint32_t *gDECAF_gen_opparam_buf;
 uint64_t *gDECAF_gen_opparam_buf;
 #endif /* TCG_TARGET_REG_BITS */
 #endif /* CONFIG_TCG_IR_LOG */
-static TranslationBlock *tbs;
+/* AWH static */ TranslationBlock *tbs;
 static int code_gen_max_blocks;
 TranslationBlock *tb_phys_hash[CODE_GEN_PHYS_HASH_SIZE];
 static int nb_tbs;
@@ -582,18 +586,18 @@ static void code_gen_alloc(unsigned long tb_size)
     tbs = g_malloc(code_gen_max_blocks * sizeof(TranslationBlock));
 #ifdef CONFIG_TCG_IR_LOG
 fprintf(stderr, "AWH: code_gen_alloc(): code_gen_max_blocks: %d\n", code_gen_max_blocks);
-fprintf(stderr, "AWH: code_gen_alloc(): gDECAF_gen_opc_buf: %d\n", OPC_MAX_SIZE * sizeof(uint16_t) * code_gen_max_blocks);
-    gDECAF_gen_opc_buf = g_malloc(OPC_MAX_SIZE * sizeof(uint16_t) * code_gen_max_blocks);
-fprintf(stderr, "AWH: code_gen_alloc(): gDECAF_gen_opparam_buf: %d\n", OPC_MAX_SIZE * sizeof(uint16_t) * 6 * code_gen_max_blocks);
-    gDECAF_gen_opparam_buf = g_malloc(OPC_MAX_SIZE * sizeof(TCGArg) * 6 * code_gen_max_blocks);
+fprintf(stderr, "AWH: code_gen_alloc(): gDECAF_gen_opc_buf: %d\n", (OPC_MAX_SIZE+ TCG_IR_LOG_PADDING) * sizeof(uint16_t) * code_gen_max_blocks);
+    gDECAF_gen_opc_buf = g_malloc((OPC_MAX_SIZE + TCG_IR_LOG_PADDING) * sizeof(uint16_t) * code_gen_max_blocks);
+fprintf(stderr, "AWH: code_gen_alloc(): gDECAF_gen_opparam_buf: %d\n", (OPC_MAX_SIZE + TCG_IR_LOG_PADDING) * sizeof(TCGArg) * 6 * code_gen_max_blocks);
+    gDECAF_gen_opparam_buf = g_malloc((OPC_MAX_SIZE + TCG_IR_LOG_PADDING) * sizeof(TCGArg) * 6 * code_gen_max_blocks);
 
     for (i = 0; i < code_gen_max_blocks; i++) {
       tbs[i].DECAF_tb_id = i;
       tbs[i].DECAF_gen_opc_buf = 
-        gDECAF_gen_opc_buf + (OPC_MAX_SIZE * i);
+        gDECAF_gen_opc_buf + ((OPC_MAX_SIZE + TCG_IR_LOG_PADDING) * i);
       /* Allocate 6 arguments per IR opcode */
       tbs[i].DECAF_gen_opparam_buf = 
-        gDECAF_gen_opparam_buf + (OPC_MAX_SIZE * 6 * i);
+        gDECAF_gen_opparam_buf + ((OPC_MAX_SIZE + TCG_IR_LOG_PADDING) * 6 * i);
       //printf("Allocating block %d of %d\n", i+1, code_gen_max_blocks);
     }
 #endif /* CONFIG_TCG_IR_LOG */

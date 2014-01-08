@@ -22,7 +22,6 @@ http://code.google.com/p/decaf-platform/
 #include "blockdev.h" // AWH
 #include "shared/DECAF_main.h" // AWH
 #include "shared/DECAF_callback.h"
-#include "shared/procmod.h"
 #include "shared/hookapi.h" // AWH
 #include "DECAF_target.h"
 // Deprecated

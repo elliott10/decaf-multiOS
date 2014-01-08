@@ -52,6 +52,30 @@
 
 #define ARCH(x) do { if (!ENABLE_ARCH_##x) goto illegal_op; } while(0)
 
+#if 1 /* AWH - For INSN_END callbacks */
+#define INSERT_INSN_END_CB() if(DECAF_is_callback_needed(DECAF_INSN_END_CB)) { gen_helper_DECAF_invoke_insn_end_callback(cpu_env); }
+#endif /* INSN_END cb */
+
+//LOK: I need a temporary global to hold the jump target for basic block end
+// This is used for checking to see if the block end callback is needed
+// Note that this is only known for direct jumps - for indirect jumps
+// we use the 0xFFFFFFFF (-1) default value
+//NOTE: There is an inherent assumption that gen_eob is called immediately
+// after gen_jump_im since I update next_pc in gen_jmp_im and then use it
+// in gen_eob.
+//next_pc is initialized to the default -1 value at the beginning of disas_insn
+// an alternative is to set it up in gen_intermediate_code_internal (which calls
+// disas_insn and is at the basic block level.)
+//I don't think we need to reset it to -1 after disas_insn, but it might be
+// safer to do so
+static target_ulong next_pc;
+
+//LOK: Similarly, we also need one to keep track of the current pc just because
+// gen_eob is called after gen_jmp_im - which updates the pc. So for block ends
+// that are generated at gen_eob, it is impossible to know where the branch
+// source was.
+static target_ulong cur_pc;
+
 /* internal defines */
 typedef struct DisasContext {
     target_ulong pc;
@@ -3599,6 +3623,16 @@ static inline void gen_goto_tb(DisasContext *s, int n, uint32_t dest)
 
     tb = s->tb;
     if ((tb->pc & TARGET_PAGE_MASK) == (dest & TARGET_PAGE_MASK)) {
+        /* AWH - BLOCK_END */
+        if(DECAF_is_BlockEndCallback_needed(tb->pc, dest))
+        {
+          TCGv_ptr tmpTb = tcg_const_ptr((tcg_target_ulong)tb);
+          TCGv tmpFrom = tcg_temp_new();
+          tcg_gen_movi_tl(tmpFrom, cur_pc);
+          gen_helper_DECAF_invoke_block_end_callback(cpu_env, tmpTb, tmpFrom);
+          tcg_temp_free(tmpFrom);
+          tcg_temp_free_ptr(tmpTb);
+        }
         tcg_gen_goto_tb(n);
         gen_set_pc_im(dest);
         tcg_gen_exit_tb((tcg_target_long)tb + n);
@@ -3610,12 +3644,16 @@ static inline void gen_goto_tb(DisasContext *s, int n, uint32_t dest)
 
 static inline void gen_jmp (DisasContext *s, uint32_t dest)
 {
+    //LOK: Update the value of next_pc
+    next_pc = dest;
+
     if (unlikely(s->singlestep_enabled)) {
         /* An indirect jump so that we still trigger the debug exception.  */
         if (s->thumb)
             dest |= 1;
         gen_bx_im(s, dest);
     } else {
+/* AWH - FIXME: DECAF_EIP_CHECK_CB goes here? */
         gen_goto_tb(s, 0, dest);
         s->is_jmp = DISAS_TB_JUMP;
     }
@@ -9865,6 +9903,7 @@ static void disas_thumb_insn(CPUState *env, DisasContext *s)
             goto undef32;
         break;
     }
+    
     return;
 undef32:
     gen_exception_insn(s, 4, EXCP_UDEF);
@@ -9877,11 +9916,21 @@ undef:
 #ifdef CONFIG_TCG_IR_LOG
 inline void log_tcg_ir(TranslationBlock *tb)
 {
+    int i;
+
     /* AWH - Store the IRs for logging to disk later by plugin, if needed. */
-    tb->DECAF_num_opc = (gen_opc_ptr - gen_opc_buf) / sizeof(uint16_t);
-    tb->DECAF_num_opparam = (gen_opparam_ptr - gen_opparam_buf) / sizeof(TCGArg);
+    tb->DECAF_num_opc = (gen_opc_ptr - gen_opc_buf);
+    tb->DECAF_num_opparam = (gen_opparam_ptr - gen_opparam_buf);
     memcpy(tb->DECAF_gen_opc_buf, gen_opc_buf, tb->DECAF_num_opc * sizeof(uint16_t));
     memcpy(tb->DECAF_gen_opparam_buf, gen_opparam_buf, tb->DECAF_num_opparam * sizeof(TCGArg));
+
+  /* Store information about the temps as to whether they are temp or local */
+  tb->DECAF_num_temps = tcg_ctx.nb_temps;
+  for (i=tcg_ctx.nb_globals; i < (tcg_ctx.nb_globals + tcg_ctx.nb_temps); i++)
+  {
+    if (tcg_ctx.temps[i].temp_local)
+      tb->DECAF_temp_type[i>>3] |= (1 << (i % 8));
+  }
 }
 #endif /* CONFIG_TCG_IR_LOG */
 
@@ -10077,6 +10126,10 @@ static inline void gen_intermediate_code_internal(CPUState *env,
             tcg_gen_debug_insn_start(dc->pc);
         }
 
+        // AWH
+        next_pc = (-1);
+        cur_pc = pc_start;
+
         if (dc->thumb) {
             disas_thumb_insn(env, dc);
             if (dc->condexec_mask) {
@@ -10090,6 +10143,7 @@ static inline void gen_intermediate_code_internal(CPUState *env,
         } else {
             disas_arm_insn(env, dc);
         }
+        INSERT_INSN_END_CB()
 
         if (dc->condjmp && !dc->is_jmp) {
             gen_set_label(dc->condlabel);
@@ -10212,13 +10266,6 @@ done_generating:
         tb->size = dc->pc - pc_start;
         tb->icount = num_insns;
     }
-#ifdef CONFIG_TCG_IR_LOG
-    /* AWH - Store the IRs for logging to disk later by plugin, if needed. */
-    tb->DECAF_num_opc = (gen_opc_ptr - gen_opc_buf) / sizeof(uint16_t);
-    tb->DECAF_num_opparam = (gen_opparam_ptr - gen_opparam_buf) / sizeof(TCGArg);
-    memcpy(tb->DECAF_gen_opc_buf, gen_opc_buf, tb->DECAF_num_opc * sizeof(uint16_t));
-    memcpy(tb->DECAF_gen_opparam_buf, gen_opparam_buf, tb->DECAF_num_opparam * sizeof(TCGArg));
-#endif /* CONFIG_TCG_IR_LOG */
 }
 
 void gen_intermediate_code(CPUState *env, TranslationBlock *tb)

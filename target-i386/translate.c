@@ -82,15 +82,14 @@ static target_ulong next_pc;
 // source was.
 static target_ulong cur_pc;
 
+static uint32_t cur_opcode;
+
 //#define MACRO_TEST   1
 
 /* global register indexes */
 /* AWH static */ TCGv_ptr cpu_env;
-static TCGv cpu_A0; 
-/* AWH - No longer static so tcg_taint.c can see them */
-TCGv cpu_cc_src, cpu_cc_dst, cpu_cc_tmp;
-TCGv_i32 cpu_cc_op;
-
+static TCGv cpu_A0, cpu_cc_src, cpu_cc_dst, cpu_cc_tmp;
+static TCGv_i32 cpu_cc_op;
 static TCGv cpu_regs[CPU_NB_REGS];
 #ifdef CONFIG_TCG_TAINT
 static TCGv taint_cpu_regs[CPU_NB_REGS];
@@ -440,7 +439,14 @@ static inline void gen_op_addl_T0_T1(void)
 
 static inline void gen_op_jmp_T0(void)
 {
+
     tcg_gen_st_tl(cpu_T[0], cpu_env, offsetof(CPUState, eip));
+
+    //For DECAF_EIP_CHECK_CB -by Hu
+#ifdef CONFIG_TCG_TAINT
+	TCGv t1 = tcg_const_ptr(cur_pc);
+    tcg_gen_DECAF_checkeip(t1, cpu_T[0]);
+#endif
 }
 
 static inline void gen_op_add_reg_im(int size, int reg, int32_t val)
@@ -638,7 +644,8 @@ static inline void gen_jmp_im(target_ulong pc)
 	next_pc = pc;
     tcg_gen_movi_tl(cpu_tmp0, pc);
     tcg_gen_st_tl(cpu_tmp0, cpu_env, offsetof(CPUState, eip));
-#ifdef CONFIG_TCG_TAINT
+
+#if 0 //Hu: not need this anymore, tainted eip check is implemented in tcg_taint.c
     if(DECAF_is_callback_needed(DECAF_EIP_CHECK_CB)) {
         cpu_tmp6 = tcg_temp_local_new();
         tcg_gen_movi_tl(cpu_tmp6, 0);
@@ -2351,6 +2358,23 @@ static inline void gen_goto_tb(DisasContext *s, int tb_num, target_ulong eip)
     	if(DECAF_is_callback_needed(DECAF_INSN_END_CB))
     		gen_helper_DECAF_invoke_insn_end_callback(cpu_env);
 
+		//Heng: now we change the opcode-specific callback to instruction end.
+		if(DECAF_is_callback_needed(DECAF_OPCODE_RANGE_CB) &&
+				DECAF_is_callback_needed_for_opcode(cur_opcode)) {
+			TCGv t_cur_pc, t_next_pc, t_opcode;
+
+			t_cur_pc = tcg_const_ptr(cur_pc);
+			t_next_pc = tcg_temp_new_ptr();
+			tcg_gen_ld_tl(t_next_pc, cpu_env, offsetof(CPUState, eip));
+			t_opcode = tcg_const_i32(cur_opcode);
+			gen_helper_DECAF_invoke_opcode_range_callback(cpu_env, t_cur_pc, t_next_pc, t_opcode);
+
+			tcg_temp_free(t_cur_pc);
+			tcg_temp_free(t_next_pc);
+			tcg_temp_free_i32(t_opcode);
+		}
+
+
     	//By the time this function is called, the env->eip has already been updated to the
     	//  new target. Keep this in mind. Take a look at the gen_jmp_tb code below
     	if(DECAF_is_BlockEndCallback_needed(tb->pc, pc))
@@ -2786,6 +2810,23 @@ static void gen_eob(DisasContext *s)
     } else {
     	if(DECAF_is_callback_needed(DECAF_INSN_END_CB))
     		gen_helper_DECAF_invoke_insn_end_callback(cpu_env);
+
+		//Heng: now we change the opcode-specific callback to instruction end.
+		if(DECAF_is_callback_needed(DECAF_OPCODE_RANGE_CB) &&
+				DECAF_is_callback_needed_for_opcode(cur_opcode)) {
+			TCGv t_cur_pc, t_next_pc, t_opcode;
+
+			t_cur_pc = tcg_const_ptr(cur_pc);
+			t_next_pc = tcg_temp_new_ptr();
+			tcg_gen_ld_tl(t_next_pc, cpu_env, offsetof(CPUState, eip));
+			t_opcode = tcg_const_i32(cur_opcode);
+			gen_helper_DECAF_invoke_opcode_range_callback(cpu_env, t_cur_pc, t_next_pc, t_opcode);
+
+			tcg_temp_free(t_cur_pc);
+			tcg_temp_free(t_next_pc);
+			tcg_temp_free_i32(t_opcode);
+		}
+
 
     	//LOK: Changed over to the new block end interface
     	//    	if(DECAF_is_callback_needed(DECAF_BLOCK_END_CB))
@@ -4180,17 +4221,12 @@ static void gen_sse(DisasContext *s, int b, target_ulong pc_start, int rex_r)
 
 /* convert one instruction. s->is_jmp is set if the translation must
    be stopped. Return the next pc value */
-
 static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
 {
     int b, prefixes, aflag, dflag;
     int shift, ot;
     int modrm, reg, rm, mod, reg_addr, op, opreg, offset_addr, val;
     target_ulong next_eip, tval;
-    //Aravind - current eip value
-    target_ulong current_eip;
-    int extended_op;
-    //end - Aravind
     int rex_w, rex_r;
 
     //LOK: update the new globals - cur_pc is NOT the current_eip
@@ -4216,25 +4252,8 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
 #endif
     s->rip_offset = 0; /* for relative ip address */
 
-    //Aravind - store eip. Use it in insn_cb_range
-    //LOK: Updated to use target_ulong
-    //TCGv_i32 tmp_eip, tmp_opcode, tmp_op; //TCGvs for eip and opcode
-    TCGv_i32 tmp_opcode, tmp_op; //TCGvs for eip and opcode
-    TCGv_i32 tmp_eip, tmp_next_eip; //TCGvs for eip and opcode
-
-    current_eip = s->pc - s->cs_base;
-    extended_op = 0;
-    //end - Aravind
-
-#if 0 //def NAIVE_TAINT
-    //EK
-    TCGv_i32 tmp_eip2;
-    tmp_eip2 = tcg_const_i32(s->pc);
-    gen_helper_taint_add(tmp_eip2);
-    tcg_temp_free_i32(tmp_eip2);
-#endif
  next_byte:
-    b = ldub_code(s->pc);
+    cur_opcode = b = ldub_code(s->pc);
     s->pc++;
     /* check prefixes */
 #ifdef TARGET_X86_64
@@ -4345,17 +4364,6 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
 
     /* now check op code */
  reswitch:
-	//Aravind - invoke opcode cbs.
- 	 if(DECAF_is_callback_needed(DECAF_OPCODE_RANGE_CB)) {
- 		tmp_eip = tcg_temp_new();
-		tcg_gen_movi_tl(tmp_eip, current_eip);
-		tmp_opcode = tcg_const_i32(b);
-		//This is an insn_begin callback
-		gen_helper_DECAF_invoke_opcode_range_callback(cpu_env, tmp_eip, 0, tmp_opcode);
-		tcg_temp_free(tmp_eip);
-		tcg_temp_free_i32(tmp_opcode);
- 	 }
- 	//end - Aravind
     switch(b) {
     case 0x0f:
         /**************************/
@@ -4773,20 +4781,6 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
             next_eip = s->pc - s->cs_base;
             gen_movtl_T1_im(next_eip);
             gen_push_T1(s);
-
-			//Aravind - to get the call target
-						//LOK: Updated to use target_ulong instead of i32
-            if(DECAF_is_callback_needed(DECAF_OPCODE_RANGE_CB)) {
-				tmp_eip = tcg_temp_new();
-				tcg_gen_movi_tl(tmp_eip,current_eip);
-
-				tmp_op = tcg_const_i32(b);
-				gen_helper_DECAF_invoke_opcode_range_callback(cpu_env, tmp_eip, cpu_T[0], tmp_op); //This is the branch target
-				tcg_temp_free_i32(tmp_op);
-				tcg_temp_free(tmp_eip);
-            }
-			//end  - to get call target
-
             gen_op_jmp_T0();
             gen_eob(s);
             break;
@@ -4794,18 +4788,6 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
             gen_op_ld_T1_A0(ot + s->mem_index);
             gen_add_A0_im(s, 1 << (ot - OT_WORD + 1));
             gen_op_ldu_T0_A0(OT_WORD + s->mem_index);
-
-			//Aravind - to get the call target
-			//LOK: Updated to use target_ulong
-			//tmp_eip = tcg_const_i32(current_eip);
-            if(DECAF_is_callback_needed(DECAF_OPCODE_RANGE_CB)) {
-				tmp_eip = tcg_temp_new();
-				tcg_gen_movi_tl(tmp_eip, current_eip);
-				tmp_op = tcg_const_i32(b);
-				gen_helper_DECAF_invoke_opcode_range_callback(cpu_env, tmp_eip, cpu_T[1], tmp_op); //This is the branch target
-				tcg_temp_free_i32(tmp_op);
-            }
-			//end  - to get call target
 
         do_lcall:
             if (s->pe && !s->vm86) {
@@ -4828,19 +4810,6 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
             if (s->dflag == 0)
                 gen_op_andl_T0_ffff();
 
-			//Aravind - to get the call target
-			//LOK: Updated to use target_ulong
-			//tmp_eip = tcg_const_i32(current_eip);
-            if(DECAF_is_callback_needed(DECAF_OPCODE_RANGE_CB)) {
-				tmp_eip = tcg_temp_new();
-				tcg_gen_movi_tl(tmp_eip, current_eip);
-				tmp_op = tcg_const_i32(b);
-				gen_helper_DECAF_invoke_opcode_range_callback(cpu_env, tmp_eip, cpu_T[0], tmp_op); //This is the branch target
-				tcg_temp_free_i32(tmp_op);
-				tcg_temp_free(tmp_eip);
-            }
-			//end  - to get call target
-
             gen_op_jmp_T0();
             gen_eob(s);
             break;
@@ -4854,39 +4823,11 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
                     gen_op_set_cc_op(s->cc_op);
                 gen_jmp_im(pc_start - s->cs_base);
                 tcg_gen_trunc_tl_i32(cpu_tmp2_i32, cpu_T[0]);
-
-				//Aravind - to get the call target
-				//LOK: Updated to use target_ulong
-				//tmp_eip = tcg_const_i32(current_eip);
-                if(DECAF_is_callback_needed(DECAF_OPCODE_RANGE_CB)) {
-					tmp_eip = tcg_temp_new();
-					tcg_gen_movi_tl(tmp_eip, current_eip);
-					tmp_op = tcg_const_i32(b);
-					gen_helper_DECAF_invoke_opcode_range_callback(cpu_env, tmp_eip, cpu_T[1], tmp_op); //This is the branch target
-					tcg_temp_free_i32(tmp_op);
-					tcg_temp_free(tmp_eip);
-                }
-				//end  - to get call target
-
                 gen_helper_ljmp_protected(cpu_tmp2_i32, cpu_T[1],
                                           tcg_const_i32(s->pc - pc_start));
             } else {
                 gen_op_movl_seg_T0_vm(R_CS);
                 gen_op_movl_T0_T1();
-
-				//Aravind - to get the call target
-				//LOK: Updated to use target_ulong
-				//tmp_eip = tcg_const_i32(current_eip);
-                if(DECAF_is_callback_needed(DECAF_OPCODE_RANGE_CB)) {
-					tmp_eip = tcg_temp_new();
-					tcg_gen_movi_tl(tmp_eip, current_eip);
-					tmp_op = tcg_const_i32(b);
-					gen_helper_DECAF_invoke_opcode_range_callback(cpu_env, tmp_eip, cpu_T[0], tmp_op); //This is the branch target
-					tcg_temp_free_i32(tmp_op);
-					tcg_temp_free(tmp_eip);
-                }
-				//end  - to get call target
-
                 gen_op_jmp_T0();
             }
             gen_eob(s);
@@ -5108,6 +5049,12 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
             tcg_temp_free(t1);
             tcg_temp_free(t2);
             tcg_temp_free(a0);
+/* AWH - This is a flag to the IR tainting logic to let
+  it know that this is a cmpxchg opcode and that the taint
+  in the EAX register should be cleared. */
+#ifdef CONFIG_TCG_TAINT
+            gen_helper_DECAF_taint_cmpxchg();
+#endif /* CONFIG_TCG_TAINT */
         }
         break;
     case 0x1c7: /* cmpxchg8b */
@@ -6402,19 +6349,6 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
         if (s->dflag == 0)
             gen_op_andl_T0_ffff();
 
-		//Aravind - to get the call target
-		//LOK: Updated to use target_ulong
-		//tmp_eip = tcg_const_i32(current_eip);
-        if(DECAF_is_callback_needed(DECAF_OPCODE_RANGE_CB)) {
-			tmp_eip = tcg_temp_new();
-			tcg_gen_movi_tl(tmp_eip, current_eip);
-			tmp_op = tcg_const_i32(b);
-			gen_helper_DECAF_invoke_opcode_range_callback(cpu_env, tmp_eip, cpu_T[0], tmp_op); //This is the branch target
-			tcg_temp_free_i32(tmp_op);
-			tcg_temp_free(tmp_eip);
-        }
-		//end  - to get call target
-
         gen_op_jmp_T0();
         gen_eob(s);
         break;
@@ -6423,19 +6357,6 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
         gen_pop_update(s);
         if (s->dflag == 0)
             gen_op_andl_T0_ffff();
-
-		//Aravind - to get the call target
-		//LOK: Updated to use target_ulong
-		//tmp_eip = tcg_const_i32(current_eip);
-        if(DECAF_is_callback_needed(DECAF_OPCODE_RANGE_CB)) {
-			tmp_eip = tcg_temp_new();
-			tcg_gen_movi_tl(tmp_eip, current_eip);
-			tmp_op = tcg_const_i32(b);
-			gen_helper_DECAF_invoke_opcode_range_callback(cpu_env, tmp_eip, cpu_T[0], tmp_op); //This is the branch target
-			tcg_temp_free_i32(tmp_op);
-			tcg_temp_free(tmp_eip);
-        }
-		//end  - to get call target
 
         gen_op_jmp_T0();
         gen_eob(s);
@@ -6508,23 +6429,6 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
                 tval &= 0xffffffff;
             gen_movtl_T0_im(next_eip);
             gen_push_T0(s);
-
-			//Aravind - to get the call target
-			//LOK: Updated to use target_ulong
-			//tmp_eip = tcg_const_i32(current_eip);
-            if(DECAF_is_callback_needed(DECAF_OPCODE_RANGE_CB)) {
-				tmp_eip = tcg_temp_new();
-				tcg_gen_movi_tl(tmp_eip, current_eip);
-				tmp_next_eip = tcg_temp_new();
-				tcg_gen_movi_tl(tmp_next_eip, tval);
-				tmp_op = tcg_const_i32(b);
-				gen_helper_DECAF_invoke_opcode_range_callback(cpu_env, tmp_eip, tmp_next_eip, tmp_op); //This is the branch target
-				tcg_temp_free_i32(tmp_op);
-				tcg_temp_free(tmp_eip);
-				tcg_temp_free(tmp_next_eip);
-            }
-			//end  - to get call target
-
             gen_jmp(s, tval);
         }
         break;
@@ -6553,22 +6457,6 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
         else if(!CODE64(s))
             tval &= 0xffffffff;
 
-		//Aravind - to get the call target
-		//LOK: Updated to use target_ulong
-		//tmp_eip = tcg_const_i32(current_eip);
-        if(DECAF_is_callback_needed(DECAF_OPCODE_RANGE_CB)) {
-			tmp_eip = tcg_temp_new();
-			tcg_gen_movi_tl(tmp_eip, current_eip);
-			tmp_next_eip = tcg_temp_new();
-			tcg_gen_movi_tl(tmp_next_eip, tval);
-			tmp_op = tcg_const_i32(b);
-			gen_helper_DECAF_invoke_opcode_range_callback(cpu_env, tmp_eip, tmp_next_eip, tmp_op); //This is the branch target
-			tcg_temp_free_i32(tmp_op);
-			tcg_temp_free(tmp_eip);
-			tcg_temp_free(tmp_next_eip);
-        }
-		//end  - to get call target
-
         gen_jmp(s, tval);
         break;
     case 0xea: /* ljmp im */
@@ -6590,22 +6478,6 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
         tval += s->pc - s->cs_base;
         if (s->dflag == 0)
             tval &= 0xffff;
-
-		//Aravind - to get the call target
-		//LOK: Updated to use target_ulong
-		//tmp_eip = tcg_const_i32(current_eip);
-        if(DECAF_is_callback_needed(DECAF_OPCODE_RANGE_CB)) {
-			tmp_eip = tcg_temp_new();
-			tcg_gen_movi_tl(tmp_eip, current_eip);
-			tmp_next_eip = tcg_temp_new();
-			tcg_gen_movi_tl(tmp_next_eip, tval);
-			tmp_op = tcg_const_i32(b);
-			gen_helper_DECAF_invoke_opcode_range_callback(cpu_env, tmp_eip, tmp_next_eip, tmp_op); //This is the branch target
-			tcg_temp_free_i32(tmp_op);
-			tcg_temp_free(tmp_eip);
-			tcg_temp_free(tmp_next_eip);
-        }
-		//end  - to get call target
 
         gen_jmp(s, tval);
         break;
@@ -7938,6 +7810,22 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
 		
 		if(DECAF_is_callback_needed(DECAF_INSN_END_CB))
 			gen_helper_DECAF_invoke_insn_end_callback(cpu_env);
+
+		//Heng: now we change the opcode-specific callback to instruction end.
+		if(DECAF_is_callback_needed(DECAF_OPCODE_RANGE_CB) &&
+				DECAF_is_callback_needed_for_opcode(b)) {
+			TCGv t_cur_pc, t_next_pc, t_opcode;
+
+			t_cur_pc = tcg_const_ptr(cur_pc);
+			t_next_pc = tcg_temp_new_ptr();
+			tcg_gen_ld_tl(t_next_pc, cpu_env, offsetof(CPUState, eip));
+			t_opcode = tcg_const_i32(b);
+			gen_helper_DECAF_invoke_opcode_range_callback(cpu_env, t_cur_pc, t_next_pc, t_opcode);
+
+			tcg_temp_free(t_cur_pc);
+			tcg_temp_free(t_next_pc);
+			tcg_temp_free_i32(t_opcode);
+		}
     }
 
     return s->pc;
@@ -8017,10 +7905,10 @@ void optimize_flags_init(void)
                                              offsetof(CPUState, taint_regs[R_EDX]), "taint_rdx");
     taint_cpu_regs[R_EBX] = tcg_global_mem_new_i64(TCG_AREG0,
                                              offsetof(CPUState, taint_regs[R_EBX]), "taint_rbx");
-    taint_cpu_regs[R_ESP] = tcg_global_mem_new_i64(TCG_AREG0,
-                                             offsetof(CPUState, taint_regs[R_ESP]), "taint_rsp");
-    taint_cpu_regs[R_EBP] = tcg_global_mem_new_i64(TCG_AREG0,
-                                             offsetof(CPUState, taint_regs[R_EBP]), "taint_rbp");
+   // taint_cpu_regs[R_ESP] = tcg_global_mem_new_i64(TCG_AREG0,
+    //                                         offsetof(CPUState, taint_regs[R_ESP]), "taint_rsp");
+  //  taint_cpu_regs[R_EBP] = tcg_global_mem_new_i64(TCG_AREG0,
+   //                                          offsetof(CPUState, taint_regs[R_EBP]), "taint_rbp");
     taint_cpu_regs[R_ESI] = tcg_global_mem_new_i64(TCG_AREG0,
                                              offsetof(CPUState, taint_regs[R_ESI]), "taint_rsi");
     taint_cpu_regs[R_EDI] = tcg_global_mem_new_i64(TCG_AREG0,
@@ -8124,11 +8012,21 @@ void optimize_flags_init(void)
 #ifdef CONFIG_TCG_IR_LOG
 inline void log_tcg_ir(TranslationBlock *tb)
 {
-    /* AWH - Store the IRs for logging to disk later by plugin, if needed. */
-    tb->DECAF_num_opc = (gen_opc_ptr - gen_opc_buf) / sizeof(uint16_t);
-    tb->DECAF_num_opparam = (gen_opparam_ptr - gen_opparam_buf) / sizeof(TCGArg);
-    memcpy(tb->DECAF_gen_opc_buf, gen_opc_buf, tb->DECAF_num_opc * sizeof(uint16_t));
-    memcpy(tb->DECAF_gen_opparam_buf, gen_opparam_buf, tb->DECAF_num_opparam * sizeof(TCGArg));
+  int i;
+
+  /* AWH - Store the IRs for logging to disk later by plugin, if needed. */
+  tb->DECAF_num_opc = (gen_opc_ptr - gen_opc_buf);
+  tb->DECAF_num_opparam = (gen_opparam_ptr - gen_opparam_buf);
+  memcpy(tb->DECAF_gen_opc_buf, gen_opc_buf, tb->DECAF_num_opc * sizeof(uint16_t));
+  memcpy(tb->DECAF_gen_opparam_buf, gen_opparam_buf, tb->DECAF_num_opparam * sizeof(TCGArg));
+
+  /* Store information about the temps as to whether they are temp or local */
+  tb->DECAF_num_temps = tcg_ctx.nb_temps;
+  for (i=tcg_ctx.nb_globals; i < (tcg_ctx.nb_globals + tcg_ctx.nb_temps); i++)
+  {
+    if (tcg_ctx.temps[i].temp_local)
+      tb->DECAF_temp_type[i>>3] |= (1 << (i % 8));
+  }  
 }
 #endif /* CONFIG_TCG_IR_LOG */
 

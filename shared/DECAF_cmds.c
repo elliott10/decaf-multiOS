@@ -14,21 +14,11 @@ If you have any questions about DECAF,please post it on
 http://code.google.com/p/decaf-platform/
 */
 #include "DECAF_cmds.h"
-#include "procmod.h"
-
-#if 0
-void do_linux_ps(Monitor *mon, const QDict* qdict)
-{
-  if (qdict_haskey(qdict, "mmap_flag"))
-    linux_ps(mon, qdict_get_int(qdict, "mmap_flag"));
-  else
-    linux_ps(mon, 1);
-}
-#endif
+#include "vmi_c_wrapper.h"
 
 void do_guest_ps(Monitor *mon)
 {
-  list_procs(mon);
+ VMI_list_processes(mon);
 }
 
 void do_guest_modules(Monitor *mon, const QDict *qdict)
@@ -46,7 +36,7 @@ void do_guest_modules(Monitor *mon, const QDict *qdict)
   {
     monitor_printf(mon, "need a pid\n");
   }
-  list_guest_modules(mon, pid);
+ VMI_list_modules(mon, pid);
 }
 
 extern int DECAF_kvm_enabled;

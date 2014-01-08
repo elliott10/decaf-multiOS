@@ -48,14 +48,9 @@ DEF(br, 0, 0, 1, TCG_OPF_BB_END | TCG_OPF_SIDE_EFFECTS)
 # define IMPL64  TCG_OPF_64BIT
 #endif
 
-#if 0 //def CONFIG_TCG_TAINT
-DEF(local_br, 0, 0, 1, TCG_OPF_SIDE_EFFECTS)
-DEF(local_set_label, 0, 0, 1, 0)
-DEF(local_brcond_i32, 0, 2, 2, TCG_OPF_SIDE_EFFECTS)
-DEF(local_brcond_i64, 0, 2, 2, TCG_OPF_SIDE_EFFECTS | IMPL64)
-DEF(local_brcond2_i32, 0, 4, 2,
-    TCG_OPF_SIDE_EFFECTS | IMPL(TCG_TARGET_REG_BITS == 32))
-#endif /* CONFIG_TCG_TAINT */
+#ifdef CONFIG_TCG_TAINT
+DEF(DECAF_checkeip, 0, 2, 0, TCG_OPF_CALL_CLOBBER | TCG_OPF_SIDE_EFFECTS) //Double check with Andrew
+#endif /*CONFIG_TCG_TAINT */
 
 DEF(mov_i32, 1, 1, 0, 0)
 DEF(movi_i32, 1, 0, 1, 0)

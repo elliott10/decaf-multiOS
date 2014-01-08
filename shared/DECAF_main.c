@@ -31,14 +31,13 @@
 #include "shared/DECAF_callback_to_QEMU.h"
 #include "shared/hookapi.h"
 #include "DECAF_target.h"
-#include "procmod.h" //remove this later
 #ifdef CONFIG_TCG_TAINT
 #include "tainting/taint_memory.h"
 #include "tainting/taintcheck_opt.h"
 #endif /* CONFIG_TCG_TAINT */
 
 #ifdef CONFIG_VMI_ENABLE
-#include "shared/vmi_include.h"
+extern void VMI_init();
 #endif
 
 int DECAF_kvm_enabled = 0;
@@ -335,20 +334,11 @@ int do_unload_plugin(Monitor *mon, const QDict *qdict, QObject **ret_data) {
 
 		//Flush all the callbacks that the plugin might have registered for
 		hookapi_flush_hooks(decaf_plugin_path);
-#ifdef TARGET_I386
-		//Currently opcode-based callback mechanism is only available in x86.
-		//DECAF_cleanup_insn_cbs();
-#endif
-//LOK: Created a new callback interface for procmod
-		//        loadmainmodule_notify = createproc_notify = removeproc_notify = loadmodule_notify = NULL;
 
 		dlclose(plugin_handle);
 		plugin_handle = NULL;
 		decaf_plugin = NULL;
 
-#if 0 //LOK: Removed // AWH TAINT_ENABLED
-		taintcheck_cleanup();
-#endif
 		monitor_printf(default_mon, "%s is unloaded!\n", decaf_plugin_path);
 		decaf_plugin_path[0] = 0;
 	} else {
@@ -500,16 +490,16 @@ void DECAF_init(void) {
 	DECAF_vm_compress_init();
 	function_map_init();
 	init_hookapi();
-	procmod_init();
-	#ifdef CONFIG_VMI_ENABLE
-	vmi_init();
-	#endif
+#ifdef CONFIG_VMI_ENABLE
+	VMI_init();
+#endif
 }
 
 /*
  * NIC related functions
  */
 static void DECAF_virtdev_write_data(void *opaque, uint32_t addr, uint32_t val) {
+#if 0
 	static char syslogline[GUEST_MESSAGE_LEN];
 	static int pos = 0;
 
@@ -524,6 +514,7 @@ static void DECAF_virtdev_write_data(void *opaque, uint32_t addr, uint32_t val) 
 #endif
 		pos = 0;
 	}
+#endif
 }
 
 void DECAF_virtdev_init(void) {
@@ -588,9 +579,10 @@ void DECAF_keystroke_place(int keycode) {
 
 }
 void DECAF_keystroke_read(uint8_t taint_status) {
+#ifdef CONFIG_TCG_TAINT
 	if (taint_keystroke_enabled) {
 		cpu_single_env->tempidx = taint_status;
 		cpu_single_env->tempidx = cpu_single_env->tempidx & 0xFF;
 	}
-
+#endif /*CONFIG_TCG_TAINT*/
 }

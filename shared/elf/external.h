@@ -210,49 +210,6 @@ typedef struct {
   } d_un;
 } Elf64_External_Dyn;
 
-/* The version structures are currently size independent.  They are
-   named without a 32 or 64.  If that ever changes, these structures
-   will need to be renamed.  */
-
-/* This structure appears in a SHT_GNU_verdef section.  */
-
-typedef struct {
-  unsigned char		vd_version[2];
-  unsigned char		vd_flags[2];
-  unsigned char		vd_ndx[2];
-  unsigned char		vd_cnt[2];
-  unsigned char		vd_hash[4];
-  unsigned char		vd_aux[4];
-  unsigned char		vd_next[4];
-} Elf_External_Verdef;
-
-/* This structure appears in a SHT_GNU_verdef section.  */
-
-typedef struct {
-  unsigned char		vda_name[4];
-  unsigned char		vda_next[4];
-} Elf_External_Verdaux;
-
-/* This structure appears in a SHT_GNU_verneed section.  */
-
-typedef struct {
-  unsigned char		vn_version[2];
-  unsigned char		vn_cnt[2];
-  unsigned char		vn_file[4];
-  unsigned char		vn_aux[4];
-  unsigned char		vn_next[4];
-} Elf_External_Verneed;
-
-/* This structure appears in a SHT_GNU_verneed section.  */
-
-typedef struct {
-  unsigned char		vna_hash[4];
-  unsigned char		vna_flags[2];
-  unsigned char		vna_other[2];
-  unsigned char		vna_name[4];
-  unsigned char		vna_next[4];
-} Elf_External_Vernaux;
-
 /* This structure appears in a SHT_GNU_versym section.  This is not a
    standard ELF structure; ELF just uses Elf32_Half.  */
 
@@ -266,20 +223,6 @@ typedef struct
   unsigned char		si_boundto[2];
   unsigned char		si_flags[2];
 } Elf_External_Syminfo;
-
-
-/* This structure appears on the stack and in NT_AUXV core file notes.  */
-typedef struct
-{
-  unsigned char		a_type[4];
-  unsigned char		a_val[4];
-} Elf32_External_Auxv;
-
-typedef struct
-{
-  unsigned char		a_type[8];
-  unsigned char		a_val[8];
-} Elf64_External_Auxv;
 
 /* Size of SHT_GROUP section entry.  */
 

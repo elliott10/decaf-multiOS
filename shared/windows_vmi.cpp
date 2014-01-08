@@ -17,7 +17,7 @@
  * windows_vmi.c
  *
  *  Created on: Jun 8, 2012
- *      Author: haoru zhao
+ *      Author: haoru zhao, Heng Yin
  */
 
 #include <inttypes.h>
@@ -44,6 +44,7 @@ extern "C" {
 #include "cpu.h"
 #include "config.h"
 #include "hw/hw.h" // AWH
+#include "qemu-timer.h"
 #include "DECAF_main.h"
 #include "DECAF_target.h"
 //#include "sysemu.h"
@@ -55,14 +56,12 @@ extern "C" {
 
 #include "windows_vmi.h"
 #include "hookapi.h"
-#include "read_linux.h"
 #include "function_map.h"
-#include "shared/procmod.h"
 #include "shared/vmi.h"
 #include "DECAF_main.h"
 #include "shared/utils/SimpleCallback.h"
 
-#if defined(CONFIG_VMI_ENABLE) && defined(TARGET_I386)
+#if defined(TARGET_I386)
 
 off_set xp_offset = { 0x18, 0x20, 0x2c, 0x88, 0x84, 0x174, 0x14c, 0x1a0, 0xc4,
 		0x3c, 0x190, 0x1ec, 0x22c, 0x134, 0x78 };
@@ -81,8 +80,8 @@ uint32_t gkpcr;
 uint32_t GuestOS_index = 11;
 uintptr_t block_handle = 0;
 BYTE *recon_file_data_raw = 0;
-#define MAX 500
-//unsigned long long insn_counter = 0;
+#define MAX_MODULE_COUNT 500
+
 /* Timer to check for proc exits */
 static QEMUTimer *recon_timer = NULL;
 
@@ -95,55 +94,18 @@ static inline int is_page_resolved(process *proc, uint32_t page_num)
 	return (proc->resolved_pages.find(page_num>>12) != proc->resolved_pages.end());
 }
 
-
-void message_p(process* proc, int operation) {
-	char proc_mod_msg[512] = { '\0' };
-	if (operation) {
-		//monitor_printf(default_mon,"P + %d %d %08x %s\n", proc->pid, proc->parent_pid, proc->cr3, proc->name);
-		snprintf(proc_mod_msg, sizeof(proc_mod_msg), "P + %d %d %08x %s\n",
-				proc->pid, proc->parent_pid, proc->cr3, proc->name);
-	} else {
-		//monitor_printf(default_mon,"P - %d %d %08x %s\n", proc->pid, proc->parent_pid, proc->cr3, proc->name);
-		snprintf(proc_mod_msg, sizeof(proc_mod_msg), "P - %d %d %08x %s\n",
-				proc->pid, proc->parent_pid, proc->cr3, proc->name);
+static inline int unresolved_attempt(process *proc, uint32_t addr)
+{
+	unordered_map <uint32_t, int>::iterator iter = proc->unresolved_pages.find(addr>>12);
+	if(iter == proc->unresolved_pages.end()) {
+		proc->unresolved_pages[addr>>12] = 1;
+		return 1;
 	}
-	handle_guest_message(proc_mod_msg);
+	iter->second++;
+
+	return iter->second;
 }
 
-void message_m(uint32_t pid, uint32_t cr3, uint32_t base, module *pe) {
-	char proc_mod_msg[612] = { '\0' };
-
-	//char api_msg[2048] = {'\0'};
-	//struct api_entry *api = NULL, *next = NULL;
-	char name[32] = { '\0' };
-	if (strlen(pe->name) == 0)
-		return;
-	uint32_t i = 0;
-	while (pe->name[i]) {
-		name[i] = tolower(pe->name[i]);
-		i++;
-	}
-	//monitor_printf(default_mon,"%s\n", name);
-	//monitor_printf(default_mon,"M %d %08x \"%s\" %08x %08x \"%s\"\n", pid, cr3, name, base, pe->size,pe->fullname);
-	snprintf(proc_mod_msg, sizeof(proc_mod_msg),
-			"M %d %08x \"%s\" %08x %08x \"%s\"\n", pid, cr3, name, base,
-			pe->size, pe->fullname);
-	handle_guest_message(proc_mod_msg);
-}
-
-void message_p_d(dprocess* proc, int operation) {
-	char proc_mod_msg[1024] = { '\0' };
-	if (operation) {
-		//monitor_printf(default_mon,"P + %d %d %08x %s\n", proc->pid, proc->parent_pid, proc->cr3, proc->name);
-		sprintf(proc_mod_msg, "P + %d %d %08x %s\n", proc->pid,
-				proc->parent_pid, proc->cr3, proc->name);
-	} else {
-		//monitor_printf(default_mon,"P - %d %d %08x %s\n", proc->pid, proc->parent_pid, proc->cr3, proc->name);
-		sprintf(proc_mod_msg, "P - %d %d %08x %s\n", proc->pid,
-				proc->parent_pid, proc->cr3, proc->name);
-	}
-	handle_guest_message(proc_mod_msg);
-}
 
 static process * find_new_process(CPUState *env, uint32_t cr3) {
 	uint32_t kdvb, psAPH, curr_proc, next_proc;
@@ -165,7 +127,7 @@ static process * find_new_process(CPUState *env, uint32_t cr3) {
 				curr_proc_base
 						+ handle_funds[GuestOS_index].offset->PSAPID_OFFSET, 4,
 				&pid);
-		if (findProcessByPidH(pid) != 0) //we have seen this process
+		if (VMI_find_process_by_pid(pid) != NULL) //we have seen this process
 			goto next;
 
 		DECAF_read_mem(env, curr_proc_base + 0x18, 4, &proc_cr3);
@@ -183,8 +145,7 @@ static process * find_new_process(CPUState *env, uint32_t cr3) {
 					curr_proc_base
 							+ handle_funds[GuestOS_index].offset->PSAPPID_OFFSET,
 					4, &pe->parent_pid);
-		addProcV(pe);
-		message_p(pe, 1);
+		VMI_create_process(pe);
 		return pe;
 
 next:
@@ -199,24 +160,6 @@ next:
 
 }
 
-/*
-static process *get_system_process(CPUState *env) {
-	process *pe = NULL;
-	//handle_funds[GuestOS_index].update_processlist();
-	find_new_process(env, env->cr[3]);
-	pe = findProcessByNameH("System");
-	return pe;
-}
-
-static process* get_new_process() {
-	//process *pe = NULL;
-	int ret = handle_funds[GuestOS_index].update_processlist();
-	if (ret == 1) {
-		//monitor_printf(default_mon, "%d\tnew process...\n", GuestOS_index);
-		return new_proc;
-	} else
-		return NULL;
-}*/
 
 static inline int get_IMAGE_NT_HEADERS(uint32_t cr3, uint32_t base, IMAGE_NT_HEADERS *nth)
 {
@@ -255,28 +198,25 @@ static inline int readustr_with_cr3(uint32_t addr, uint32_t cr3, void *buf,
 	if (unicode_len > MAX_UNICODE_LENGTH)
 		unicode_len = MAX_UNICODE_LENGTH;
 
-	if (DECAF_memory_rw(env, unicode_data[1], (void *) unicode_str, unicode_len, 0) < 0) {
+	if (DECAF_read_mem(env, unicode_data[1], unicode_len, (void *) unicode_str) < 0) {
 		store[0] = '\0';
 		goto done;
 	}
 
 	for (i = 0, j = 0; i < unicode_len; i += 2, j++) {
-//		if (unicode_str[i] < 0x20 || unicode_str[i] > 0x7e) //Non_printable character
-//			break;
-
 		store[j] = tolower(unicode_str[i]);
 	}
 	store[j] = '\0';
 
 done:
-	return j; //strlen(store);
+	return j;
 }
 
 
 /* this function convert a full DLL name to a base name. */
 static char * get_basename(char *fullname)
 {
-	int i = 0, last_slash = -1, j;
+	int i = 0, last_slash = -1;
 	for(; fullname[i] != 0; i++)
 		if (fullname[i] == '/' || (fullname[i] == '\\'))
 			last_slash = i;
@@ -306,8 +246,8 @@ static void update_kernel_modules(CPUState *env, target_ulong vaddr) {
 				curr_mod + handle_funds[GuestOS_index].offset->DLLBASE_OFFSET,
 				4, &base);
 
-		if (is_page_resolved(kernel_proc, base))
-			goto next;
+		//if (is_page_resolved(kernel_proc, base))
+			//goto next;
 
 
 		char name[512];
@@ -327,7 +267,7 @@ static void update_kernel_modules(CPUState *env, target_ulong vaddr) {
 
 		snprintf(key, sizeof(key)-1, "%s:%08x", base_name, nth.OptionalHeader.CheckSum);
 		//See if we have extracted detailed info about this module
-		curr_entry = findModule(key);
+		curr_entry = VMI_find_module_by_key(key);
 		if (!curr_entry) {
 			curr_entry = new module();
 			DECAF_read_mem(env,
@@ -336,11 +276,10 @@ static void update_kernel_modules(CPUState *env, target_ulong vaddr) {
 
 			strncpy(curr_entry->name, base_name, sizeof(curr_entry->name)-1);
 			readustr_with_cr3(curr_mod + 0x24, 0, curr_entry->fullname, env);
-			addModule(curr_entry, key);
+			VMI_add_module(curr_entry, key);
 		}
 
-		procmod_insert_modinfoV(kernel_proc->pid, base, curr_entry);
-		message_m(kernel_proc->pid, kernel_proc->cr3, base, curr_entry);
+		VMI_insert_module(kernel_proc->pid, base, curr_entry);
 
 next:
 		DECAF_read_mem(env, curr_mod, 4, &next_mod);
@@ -394,25 +333,25 @@ static void update_loaded_user_mods_with_peb(CPUState* env, process *proc,
 
 			snprintf(key, sizeof(key)-1, "%s:%08x", name, nth.OptionalHeader.CheckSum);
 			//See if we have extracted detailed info about this module
-			curr_entry = findModule(key);
+			curr_entry = VMI_find_module_by_key(key);
 
 			if(!curr_entry) { //We haven't seen this module before, even in other process memory spaces
 				curr_entry = new module();
 				readustr_with_cr3(curr_dll + 0x24, 0, curr_entry->fullname, env);
 				DECAF_read_mem(env, curr_dll + 0x20, 4, &curr_entry->size);
 				strncpy(curr_entry->name, name, sizeof(curr_entry->name)-1);
-				addModule(curr_entry, key);
+				VMI_add_module(curr_entry, key);
 			}
 
-			procmod_insert_modinfoV(proc->pid, base, curr_entry);
-			message_m(proc->pid, cr3, base, curr_entry);
+			VMI_insert_module(proc->pid, base, curr_entry);
+			//message_m(proc->pid, cr3, base, curr_entry);
 
 		}
 
 next:
 		//read the next DLL
 		DECAF_read_mem(env, curr_dll, 4, &curr_dll);
-	} while (curr_dll != 0 && curr_dll != first_dll && count < MAX);
+	} while (curr_dll != 0 && curr_dll != first_dll && count < MAX_MODULE_COUNT);
 
 }
 
@@ -423,7 +362,6 @@ static void extract_export_table(IMAGE_NT_HEADERS *nth, uint32_t cr3, uint32_t b
 	DWORD *func_addrs=NULL, *name_addrs=NULL;
 	WORD *ordinals=NULL;
 	char name[64];
-	char msg[512];
 	DWORD i;
 	CPUState *env = cpu_single_env;
 	edt_va = nth->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
@@ -468,9 +406,7 @@ static void extract_export_table(IMAGE_NT_HEADERS *nth, uint32_t cr3, uint32_t b
 
 		DECAF_read_mem(env, base + name_addrs[i], sizeof(name)-1, name);
 		name[127] = 0;
-		snprintf(msg, sizeof(msg)-1, "F %s %s %08x\n", mod->name, name, func_addrs[index]);
-		handle_guest_message(msg);
-		//monitor_printf(default_mon, "%s", msg);
+		funcmap_insert_function(mod->name, name, func_addrs[index]);
 	}
 	//monitor_printf(default_mon, "%s: Total exports = %d, %d\n", mod->fullname, ied.NumberOfFunctions, ied.NumberOfNames);
 
@@ -536,10 +472,10 @@ static inline void get_new_modules(CPUState* env, process * proc, target_ulong v
 	}
 }
 
-static void tlb_call_back(DECAF_Callback_Params *temp) {
+static void tlb_call_back(DECAF_Callback_Params *temp)
+{
 	CPUState *env = temp->tx.env;
 	target_ulong vaddr = temp->tx.vaddr;
-	uint32_t exit_page = 0;
 	uint32_t cr3 = env->cr[3];
 	process *proc;
 
@@ -547,22 +483,21 @@ static void tlb_call_back(DECAF_Callback_Params *temp) {
 		proc = kernel_proc;
 		kernel_proc->cr3 = cr3;
 	} else {
-		proc = findProcessByCR3(cr3);
+		proc = VMI_find_process_by_pgd(cr3);
 		if (proc == NULL)
 			proc = find_new_process(env, cr3);
 	}
 
 	if (proc ) {
-		if (!is_page_resolved(proc, vaddr))
+		if (!is_page_resolved(proc, vaddr)) {
 			get_new_modules(env, proc, vaddr);
 
-		if (!is_page_resolved(proc, vaddr)) {
-			if (proc->pending_pages.find(vaddr>>12) == proc->pending_pages.end())
-				proc->pending_pages.insert(vaddr>>12);
-			else {
-				proc->pending_pages.erase(vaddr>>12);
-				proc->resolved_pages.insert(vaddr>>12);
+			if (!is_page_resolved(proc, vaddr)) {
+				int attempts = unresolved_attempt(proc, vaddr);
+				if (attempts > 3)
+					proc->resolved_pages.insert(vaddr>>12);
 			}
+
 		}
 		retrieve_missing_symbols(proc);
 	}
@@ -669,10 +604,13 @@ static uint32_t probe_windows(CPUState *env)
 				//vm_stop(RUN_STATE_DEBUG);
 				return 0;
 			} else {
+				VMI_guest_kernel_base = 0x80000000;
 				return base;
 			}
 		}
 	}
+
+	return 0;
 }
 
 int find_win7sp0(CPUState *env, uintptr_t insn_handle) {
@@ -707,38 +645,34 @@ int find_winxpsp3(CPUState *env, uintptr_t insn_handle) {
 
 
 
-uint32_t exit_block_end_eip = 0;
-void check_procexit(void *) {
+void check_procexit(void *)
+{
 	CPUState *env = cpu_single_env ? cpu_single_env : first_cpu;
 	qemu_mod_timer(recon_timer,
-			qemu_get_clock_ns(vm_clock) + get_ticks_per_sec() * 30);
+			qemu_get_clock_ns(vm_clock) + get_ticks_per_sec() * 10);
 	//monitor_printf(default_mon, "Checking for proc exits...\n");
 
-	struct process_entry *proc = NULL, *next = NULL;
 	uint32_t end_time[2];
-	size_t numofProc;
-	dprocess *processes;
-	int i = 0;
-	processes = find_all_processes_infoV(&numofProc);
-	if (processes != NULL) {
-		for (i = 0; i < numofProc; i++) {
-			dprocess *proc = &processes[i];
-			if (proc->parent_pid == 0)
-				continue;
-			//0x78 for xp, 0x88 for win7
-			DECAF_read_mem(env, (proc->EPROC_base_addr)
-							+ handle_funds[GuestOS_index].offset->PEXIT_TIME,
-							8,  end_time);
-			if (end_time[0] | end_time[1]) {
+	vector<target_ulong> pid_list;
 
-				removeProcV(proc->pid);
-				message_p_d(proc, 0);
-				exit_block_end_eip = env->eip;
-				//return;
-			}
+	unordered_map < uint32_t, process * >::iterator iter = process_map.begin();
+	for (; iter!=process_map.end(); iter++) {
+		process *proc = iter->second;
+		if (proc->parent_pid == 0)
+			continue;
+
+		//0x78 for xp, 0x88 for win7
+		DECAF_read_mem(env, proc->EPROC_base_addr
+						+ handle_funds[GuestOS_index].offset->PEXIT_TIME,
+						8,  end_time);
+		if (end_time[0] | end_time[1]) {
+			pid_list.push_back(proc->pid);
 		}
 	}
-	delete[] processes;
+
+	for (size_t i=0; i<pid_list.size(); i++) {
+		VMI_remove_process(pid_list[i]);
+	}
 }
 
 void win_vmi_init()
@@ -748,12 +682,12 @@ void win_vmi_init()
 	kernel_proc->cr3 = 0;
 	strcpy(kernel_proc->name, "<kernel>");
 	kernel_proc->pid = 0;
-	addProcV(kernel_proc);
+	VMI_create_process(kernel_proc);
 
 	recon_timer = qemu_new_timer_ns(vm_clock, check_procexit, 0);
 	qemu_mod_timer(recon_timer,
 			qemu_get_clock_ns(vm_clock) + get_ticks_per_sec() * 30);
 
 }
-#endif /* CONFIG_VMI_ENABLE*/
 
+#endif

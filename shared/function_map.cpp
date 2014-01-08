@@ -42,9 +42,9 @@ http://code.google.com/p/decaf-platform/
 #include "DECAF_main.h"
 #include "DECAF_vm_compress.h"
 #include "hw/hw.h" // AWH
+#include "shared/vmi.h"
 #include "function_map.h"
 #include "shared/hookapi.h"
-#include "shared/procmod.h"
 
 using namespace std;
 
@@ -56,8 +56,9 @@ map<string, map<uint32_t, string> > map_offset_function;
 
 target_ulong funcmap_get_pc(const char *module_name, const char *function_name, target_ulong cr3)
 {
-	tmodinfo_t *mi = locate_module_byname(module_name, find_pid(cr3));
-	if(!mi)
+	target_ulong base;
+	module *mod = VMI_find_module_by_name(module_name, cr3, &base);
+	if(!mod)
 		return 0;
 
 	map<string, map<string, uint32_t> >::iterator iter = map_function_offset.find(module_name);
@@ -68,30 +69,30 @@ target_ulong funcmap_get_pc(const char *module_name, const char *function_name, 
 	if(iter2 == iter->second.end())
 		return 0;
 
-	return iter2->second + mi->base;
+	return iter2->second + base;
 }
 
 int funcmap_get_name(target_ulong pc, target_ulong cr3, string &mod_name, string &func_name)
 {
-	char proc_name[512];
-	tmodinfo_t *mi = locate_module(pc, cr3, proc_name);
-	if(!mi)
+	target_ulong base;
+	module *mod = VMI_find_module_by_pc(pc, cr3, &base);
+	if(!mod)
 		return -1;
 
-	map<string, map<uint32_t, string> >::iterator iter = map_offset_function.find(mi->name);
+	map<string, map<uint32_t, string> >::iterator iter = map_offset_function.find(mod->name);
 	if (iter == map_offset_function.end())
 		return -1;
 
-	map<uint32_t, string>::iterator iter2 = iter->second.find(pc - mi->base);
+	map<uint32_t, string>::iterator iter2 = iter->second.find(pc - base);
 	if (iter2 == iter->second.end())
 		return -1;
 
-	mod_name = mi->name;
+	mod_name = mod->name;
 	func_name = iter2->second;
 	return 0;
 }
 
-int funcmap_get_name_c(target_ulong pc, target_ulong cr3, char mod_name[], char func_name[])
+int funcmap_get_name_c(target_ulong pc, target_ulong cr3, char *mod_name, char *func_name)
 {
 	string mod, func;
 	int ret = funcmap_get_name(pc, cr3, mod, func);
@@ -111,19 +112,24 @@ int funcmap_get_name_c(target_ulong pc, target_ulong cr3, char mod_name[], char 
 #define BOUNDED_QUOTED(len) "%" #len "[^\"]"
 #define BOUNDED_STR_x(len) BOUNDED_STR(len)
 #define BOUNDED_QUOTED_x(len) BOUNDED_QUOTED(len)
-#define BSTR BOUNDED_STR_x(GUEST_MESSAGE_LEN_MINUS_ONE)
-#define BQUOT BOUNDED_QUOTED_x(GUEST_MESSAGE_LEN_MINUS_ONE)
+#define BSTR BOUNDED_STR_x(511)
+#define BQUOT BOUNDED_QUOTED_x(511)
 
 
 void parse_function(const char *message)
 {
-	char module[GUEST_MESSAGE_LEN];
-	char fname[GUEST_MESSAGE_LEN];
+	char module[512];
+	char fname[512];
 	uint32_t offset;
 
 	if (sscanf(message, " F " BSTR " " BSTR " %x ", module, fname, &offset) != 3)
 		return;
 
+	funcmap_insert_function(module, fname, offset);
+}
+
+void funcmap_insert_function(const char *module, const char *fname, uint32_t offset)
+{
 	map<string, map<string, uint32_t> >::iterator iter = map_function_offset.find(module);
 	if (iter == map_function_offset.end()) {
 		map<string, uint32_t> func_offset;
@@ -140,8 +146,8 @@ void parse_function(const char *message)
 		map_offset_function[module] = offset_func;
 	} else
 		iter2->second.insert(pair<uint32_t, string>(offset, fname));
-}
 
+}
 
 static void function_map_save(QEMUFile * f, void *opaque)
 {

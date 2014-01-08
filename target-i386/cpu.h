@@ -618,10 +618,10 @@ typedef struct CPUX86State {
     target_ulong regs[CPU_NB_REGS];
 #ifdef CONFIG_TCG_TAINT
     target_ulong taint_regs[CPU_NB_REGS];
-#endif /* CONFIG_TCG_TAINT */
     target_ulong tempidx; // AWH - added for DECAF
     target_ulong tempidx2; // AWH - added for DECAF
     target_ulong eip_taint; // AWH - EIP callback
+#endif /* CONFIG_TCG_TAINT */
     target_ulong eip;
     target_ulong eflags; /* eflags register. During CPU emulation, CC
                         flags and DF are set to zero because they are

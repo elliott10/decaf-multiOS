@@ -105,14 +105,7 @@ typedef struct TranslationBlock TranslationBlock;
 #define OPC_BUF_SIZE 640
 #endif /* CONFIG_TCG_TAINT */
 #define MAX_OP_PER_INSTR (OPC_BUF_SIZE - 208)
-/* AWH - We want to reduce the number of IR ops that are generated in
-   a single TB to reduce the number of IRs that we have to store if we
-   are storing the IRs for a plugin to examine later. */
-#ifdef CONFIG_TCG_IR_LOG
-#define OPC_MAX_SIZE 200
-#else
 #define OPC_MAX_SIZE (OPC_BUF_SIZE - MAX_OP_PER_INSTR)
-#endif /* CONFIG_TCG_IR_LOG */
 /* Maximum size a TCG op can expand to.  This is complicated because a
    single op may require several host instructions and register reloads.
    For now take a wild guess at 192 bytes, which should allow at least
@@ -221,6 +214,8 @@ struct TranslationBlock {
     uint32_t DECAF_num_opc;
     uint32_t DECAF_num_opparam;
     unsigned long DECAF_tb_id; /* AWH - offset of this in "tbs" (exec.c) */
+    uint16_t DECAF_num_temps; /* AWH - number of temp or local registers in this TB */
+    uint8_t DECAF_temp_type[64]; /* AWH - Bitmap to describe which registers are temp (0) or local (1) */ 
 #endif /* CONFIG_TCG_IR_LOG */
 };
 

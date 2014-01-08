@@ -194,6 +194,16 @@ int DECAF_is_callback_needed(DECAF_callback_type_t cb_type)
   return !LIST_EMPTY(&callback_list_heads[cb_type]);
 }
 
+//Aravind - Serialized callbacks. 000 to 1ff, 1xx == 0fxx (for two byte opcodes)
+static callback_struct_t* instructionCallbacks[0x200] = {0};
+
+int DECAF_is_callback_needed_for_opcode(int op)
+{
+	if(op < 0x200 && instructionCallbacks[op] != NULL)
+		return 1;
+
+	return 0;
+}
 //here we search from the broadest to the narrowest
 // to determine whether the callback is needed
 int DECAF_is_BlockBeginCallback_needed(gva_t pc)
@@ -330,9 +340,6 @@ DECAF_Handle DECAF_registerOptimizedBlockBeginCallback(
 
   return ((DECAF_Handle)cb_struct);
 }
-
-//Aravind - Serialized callbacks. 000 to 1ff, 1xx == 0fxx (for two byte opcodes)
-static callback_struct_t* instructionCallbacks[0x200] = {0};
 
 //Aravind - Function to register cb handlers for instruction ranges
 DECAF_Handle DECAF_registerOpcodeRangeCallbacks (
@@ -956,17 +963,16 @@ void helper_DECAF_invoke_mem_read_callback(gva_t virt_addr,gpa_t phy_addr,DATA_T
 		}
 	}
 }
-void helper_DECAF_invoke_eip_check_callback(uint32_t eip, uint32_t eip_taint)
+void helper_DECAF_invoke_eip_check_callback(gva_t source_eip, gva_t target_eip, gva_t target_eip_taint)
 {
 	callback_struct_t *cb_struct;
 	DECAF_Callback_Params params;
 	PUSH_ALL() //AWH
-	params.ec.eip = eip;
-    params.ec.eip_taint = eip_taint;
+	params.ec.source_eip = source_eip;
+    params.ec.target_eip = target_eip;
+    params.ec.target_eip_taint = target_eip_taint;
 	//if (cpu_single_env == 0) return;
 
-	if(!DECAF_is_callback_needed(DECAF_EIP_CHECK_CB))
-		goto out;
 	//FIXME: not thread safe
 	LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_EIP_CHECK_CB], link)
 	{
@@ -1024,7 +1030,7 @@ void helper_DECAF_invoke_mem_write_callback(gva_t virt_addr,gpa_t phy_addr,DATA_
 	}
 }
 
-void helper_DECAF_invoke_nic_rec_callback(uint8_t * buf,int size,int cur_pos,int start,int stop)
+void helper_DECAF_invoke_nic_rec_callback(const uint8_t * buf,int size,int cur_pos,int start,int stop)
 {
 	callback_struct_t *cb_struct;
 	DECAF_Callback_Params params;
@@ -1045,7 +1051,7 @@ void helper_DECAF_invoke_nic_rec_callback(uint8_t * buf,int size,int cur_pos,int
 	}
 }
 
-void helper_DECAF_invoke_nic_send_callback(uint32_t addr,int size,uint8_t *buf)
+void helper_DECAF_invoke_nic_send_callback(uint32_t addr,int size, const uint8_t *buf)
 {
 	callback_struct_t *cb_struct;
 	DECAF_Callback_Params params;

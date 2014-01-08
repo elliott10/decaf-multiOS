@@ -5941,6 +5941,7 @@ void helper_insn_cb_dispatch(uint32_t eip, uint32_t next_eip, uint32_t op2)
 //end - Aravind
 
 #ifdef CONFIG_TCG_TAINT
+void helper_DECAF_taint_cmpxchg(void) {}
 
 /*
   patch for keystroke propagation on windows xp sp2 and sp3

@@ -36,8 +36,6 @@ extern "C"
 {
 #endif
 
-extern int DECAF_kvm_enabled;
-
 /*************************************************************************
  * The Plugin interface comes first
  *************************************************************************/
@@ -62,17 +60,7 @@ typedef struct _plugin_interface {
   void (*plugin_cleanup)(void);
 
   //TODO: may need to remove it.
-  void (*send_keystroke) (int reg);
-#if 0 //LOK: Removed the callback interfaces
-  /// This callback is invoked at the beginning of each basic block
-  int (*block_begin) (void);
-  /// This callback is invoked at the end of each basic block
-  void (*block_end) (void);
-  /// This callback is invoked at the beginning of each instruction
-  void (*insn_begin) (void);
-  /// This callback is invoked at the end of each instruction
-  void (*insn_end) (void);
-#endif
+  //void (*send_keystroke) (int reg);
 
   //TODO: need to change it into using our generic callback interface
   void (*after_loadvm) (const char *param);

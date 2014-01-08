@@ -49,21 +49,15 @@ extern "C" {
 };
 #endif /* __cplusplus */
 
-#include "linux_vmi.h"
 #include "linux_procinfo.h"
 #include "hookapi.h"
 #include "function_map.h"
-#include "shared/procmod.h"
 #include "shared/vmi.h"
 #include "DECAF_main.h"
 #include "shared/utils/SimpleCallback.h"
 
 
 #ifdef TARGET_I386
-  //typedef uint32_t target_ulong;
-  //typedef int32_t target_long;
-  //typedef uint32_t target_uint;
-  //typedef int32_t target_int;
   #define T_FMT ""
   #define PI_R_EAX "eax"
   #define PI_R_ESP "esp"
@@ -72,10 +66,6 @@ extern "C" {
                                 && ((_x & 0xE0E0E0E0) != 0) )
 */
 #elif defined(TARGET_ARM)
-  //typedef uint32_t target_ulong;
-  //typedef int32_t target_long;
-  //typedef uint32_t target_uint;
-  //typedef uint32_t target_int;
   #define T_FMT ""
   #define PI_R_EAX "r0"
   #define PI_R_ESP "sp"
@@ -85,10 +75,6 @@ extern "C" {
                                 && ((_x & 0xE0E0E0E0) != 0) )
 */
 #else
-  //typedef uint64_t target_ulong;
-  //typedef int64_t target_long;
-  //typedef uint32_t target_uint;
-  //typedef int32_t target_int;
   #define T_FMT "ll"
   #define PI_R_EAX "rax"
   #define PI_R_ESP "rsp"
@@ -98,8 +84,7 @@ extern "C" {
 */
 #endif
 
-
-inline int isPrintableASCII(target_ulong x)
+static inline int isPrintableASCII(target_ulong x)
 {
   int i = 0;
   char c = 0;
@@ -124,15 +109,13 @@ inline int isPrintableASCII(target_ulong x)
 
 typedef target_ptr gva_t;
 typedef target_ulong gpa_t;
+typedef target_int target_pid_t;
 
 //Here are some definitions straight from page_types.h
 
-//this is common to all linux kernels - 4k pages
-//#define TARGET_PAGE_BITS 12
-//I just use 1 here instead of 1UL or even the macro for _AC
-// which is used in the kernel code
-//#define TARGET_PAGE_SIZE (1 << TARGET_PAGE_BITS)
-//#define TARGET_PAGE_MASK (~(TARGET_PAGE_SIZE - 1))
+#define INV_ADDR ((target_ulong) -1)
+#define INV_OFFSET ((target_ulong) -1)
+#define INV_UINT ((target_uint) -1)
 
 #if defined(TARGET_I386) || defined(TARGET_ARM)
   //this is the default value - but keep in mind that a custom built
@@ -166,15 +149,15 @@ typedef target_ulong gpa_t;
 #define TARGET_TASK_SIZE TARGET_PAGE_OFFSET
 #define TARGET_KERNEL_START TARGET_TASK_SIZE
 
-#if defined( TARGET_I386) 
+#if defined(TARGET_I386) 
   //got this value from testing - not necessarily true though
   //might be some devices mapped into physical memory
   // that will screw things up a bit
-  #define TARGET_KERNEL_END 0xF8000000
+  #define TARGET_KERNEL_END (0xF8000000 - 1)
 #elif defined(TARGET_ARM)
-  // NOTICE in ARM when RAM size is less then 896, then hign_memory is equal to actual RAM size
-  // in the image we compiled, the default RAM size is 128
-  #define TARGET_KERNEL_END (0xC0000000 + (128 * 1024 * 1024))
+  // NOTICE in ARM when RAM size is less than 896, then high_memory is equal to actual RAM size
+  // check this link: http://www.arm.linux.org.uk/developer/memory.txt
+  #define TARGET_KERNEL_END (TARGET_PAGE_OFFSET + ((ram_size < 896 * 1024 * 1024) ? (ram_size - 1) : (0xF8000000 - 1)))
 #else
   //same here - in fact the global stuff (from the kernel image) are defined in higher addresses
   #define TARGET_KERNEL_END 0xFFFFC80000000000
@@ -206,9 +189,9 @@ typedef target_ulong gpa_t;
 // 0xC0000000 are valid, some are not 
 // depending on whether the virtual address range is used
 // we can figure this out by searching through the page tables
-inline int isKernelAddress(gva_t addr)
+static inline int isKernelAddress(gva_t addr)
 {
-  return ( 
+  return (
     //the normal kernel memory area
     ( (addr >= TARGET_KERNEL_START) && (addr < TARGET_KERNEL_END) )
     //OR the kernel image area - in case the kernel image was mapped to some
@@ -224,7 +207,7 @@ inline int isKernelAddress(gva_t addr)
   );
 }
 
-inline int isKernelAddressOrNULL(gva_t addr)
+static inline int isKernelAddressOrNULL(gva_t addr)
 {
   return ( (addr == (gva_t)0) || (isKernelAddress(addr)) ); 
 }
@@ -250,15 +233,15 @@ static inline target_ulong get_target_ulong_at(CPUState *env, gva_t addr)
 {
   target_ulong val;
   if (DECAF_read_mem(env, addr, sizeof(target_ulong), &val) < 0)
-    val = 0;
+    return (INV_ADDR);
   return val;
 }
 
-static inline uint32_t get_uint32_at(CPUState *env, gva_t addr)
+static inline target_uint get_uint32_at(CPUState *env, gva_t addr)
 {
-  uint32_t val;
+  target_uint val;
   if (DECAF_read_mem(env, addr, sizeof(uint32_t), &val) < 0)
-    val = 0;
+    return (INV_UINT);
   return val;
 }
 
@@ -280,7 +263,7 @@ gva_t findTaskStructFromThreadInfo(CPUState * env, gva_t threadinfo, ProcInfo* p
   gva_t temp = 0;
   gva_t temp2 = 0;
   gva_t candidate = 0;
-  gva_t ret = 0;
+  gva_t ret = INV_ADDR;
  
   if (pPI == NULL)
   {
@@ -348,6 +331,8 @@ gpa_t findPGDFromMMStruct(CPUState * env, gva_t mm, ProcInfo* pPI, int bDoubleCh
   for (i = 0; i < MAX_MM_STRUCT_SEARCH_SIZE; i += sizeof(target_ulong))
   {
     temp = get_target_ulong_at(env, mm + i);
+	if (temp == INV_ADDR)
+	  return (INV_ADDR);
     if (pgd == TARGET_PGD_TO_CR3((temp & TARGET_PGD_MASK))) 
     {
       if (pPI->mm_pgd == INV_OFFSET)
@@ -383,11 +368,11 @@ gva_t findMMStructFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI, int bD
         if (pPI->ts_mm == INV_OFFSET) {
           // do a test, if this is mm, then active_mm should be equal to mm
           if (get_target_ulong_at(env, ts + i + sizeof(target_ulong)) == temp) {
-	    pPI->ts_mm = i;
+	        pPI->ts_mm = i;
             //monitor_printf(default_mon, "mm and active_mm is the same! \n");
           }
           else if (last_mm == 0) {	// current mm may be active_mm
-	    pPI->ts_mm = i - sizeof(target_ulong);
+	        pPI->ts_mm = i - sizeof(target_ulong);
             //monitor_printf(default_mon, "mm is null, active_mm detected! \n");
           }
           else
@@ -436,7 +421,7 @@ int isListHead(CPUState * env, gva_t lh)
     return (1);
   }
 
-  return (INV_ADDR);
+  return (0);
 }
  
 //TODO: DoubleCheck
@@ -830,7 +815,7 @@ gva_t findCredFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
   return (INV_ADDR);
 }
 
-#if defined( TARGET_I386) || defined (TARGET_ARM)
+#if defined(TARGET_I386) || defined (TARGET_ARM)
   #define STACK_CANARY_MASK 0xFFFF0000
 #else
   #define STACK_CANARY_MASK 0xFFFF0000FFFF0000 
@@ -861,6 +846,8 @@ gva_t findPIDFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
   }
 
   ts = get_target_ulong_at(env, ts + pPI->ts_group_leader);
+  if (ts == INV_ADDR)
+    return (INV_ADDR);
 
   //the signature is fairly simple - both pid and tgid are going to be the same
   // as long as the task in question is a group_leader 
@@ -919,7 +906,7 @@ int isStartCodeInMM(CPUState * env, target_ulong* temp, target_ulong expectedSta
 {
   if (temp == NULL)
   {
-    return (INV_ADDR);
+    return (0);
   }
 
   if ( 
@@ -1191,19 +1178,26 @@ int populate_vm_area_struct_offsets(CPUState * env, gva_t vma, ProcInfo* pPI)
   // file comes after flags
   for ( ; i < MAX_VM_AREA_STRUCT_SEARCH_SIZE; i += sizeof(target_ulong))
   {
-    if ( isListHead(env, vma+i)
+    target_ulong vm_pgoff;
+    // NOTICE the vm_pgoff shouldn't be zero, as in ARM, the pointer in list_head can be NULL,
+    // there is possibility we are getting the first node of anon_vma_node as vm_file
+    if ( isListHead(env, vma+i) 
 //once again it looks like in the ARM test case, listhead is NULL instead of pointing to self
-         || ( (get_target_ulong_at(env, vma+i) == 0) && (get_target_ulong_at(env, vma+i+sizeof(target_ulong)) == 0) ) )
-    {
+#ifdef TARGET_ARM
+         || ( (get_target_ulong_at(env, vma+i) == 0) && (get_target_ulong_at(env, vma+i+sizeof(target_ulong)) == 0) )
+#endif
+    ) {
       //first we see if the short circuiting works - if it does then we are set
       if (
            isKernelAddress(get_target_ulong_at(env, vma + i + SIZEOF_LIST_HEAD + sizeof(target_ulong)))
-           && !isKernelAddress(get_target_ulong_at(env, vma + i + SIZEOF_LIST_HEAD + sizeof(target_ulong) + sizeof(target_ulong)))
+           && !isKernelAddress(vm_pgoff = get_target_ulong_at(env, vma + i + SIZEOF_LIST_HEAD + sizeof(target_ulong) + sizeof(target_ulong)))
+           && vm_pgoff != 0
          )
       {
         if (pPI->vma_vm_file == INV_OFFSET)
         {
           pPI->vma_vm_file = i + SIZEOF_LIST_HEAD + (sizeof(target_ulong) * 3);
+          pPI->vma_vm_pgoff = pPI->vma_vm_file - (sizeof(target_ulong));
         }
         break;
       }
@@ -1301,134 +1295,6 @@ int populate_cred_struct_offsets(CPUState * env, gva_t cred, ProcInfo* pPI)
   return (0);
 }
 
-#if 1
-//d_parent is the third pointer - since it is after hlist_bl_node -
-// which contains two pointers
-//Then d_name is right after d_parent
-// finally d_iname is after d_name and another pointer which is d_inode
-// d_iname is a qstr which is a data structure with a HASH plus a
-// pointer to the name
-// basically we can use a bunch of pointers to help find the offsets
-// of interest
-//The only problem is that the pointers can be NULL -
-// so the question is how to handle these situations?
-//For now I am just going to use some hardcoded offsets
-// since the only unknown in this the seqcount - which is an unsigned
-// so basically it is 4 bytes
-//TODO: Try to figure this out - the only problem
-// is that not all vmarea structs have files and dentry objects
-// which means to do this properly - we will likely need to
-// search for the first executable page (where the binary is loaded)
-// and then look at the name for that dentry - that way
-// we can be sure that at least d_iname is defined - and can look
-// for the cstring there.
-int populate_dentry_struct_offsets(CPUState *env, gva_t dentry, ProcInfo* pPI)
-{
-	static bool isOffsetPopulated = false;
-	if (isOffsetPopulated)
-		return (0);
-
-	target_ulong i = 0;
-
-	if (pPI == NULL)
-	{
-		return (-1);
-	}
-
-	i = sizeof(unsigned int) + sizeof(unsigned);
-	i += sizeof(target_ulong) + sizeof(target_ulong); //hlist_bl_node is two pointers
-
-
-	if (pPI->dentry_d_parent == INV_OFFSET)
-	{
-		pPI->dentry_d_parent = i;
-	}
-	if (pPI->dentry_d_name == INV_OFFSET)
-	{
-		pPI->dentry_d_name = i + sizeof(target_ulong);
-	}
-
-	i += sizeof(target_ulong); //push out d_name
-
-	//now we add in the qstr
-	i += sizeof(uint64_t) + sizeof(target_ulong); // u32 (for hash) and u32 for len plus the pointer
-	//now add in the d_inode pointer
-	i += sizeof(target_ulong);
-
-
-	if (pPI->dentry_d_iname == INV_OFFSET)
-	{
-		pPI->dentry_d_iname = i;
-	}
-
-	isOffsetPopulated = true;
-	return (0);
-
-	/** Not used yet **
-	if (!isStructKernelAddress(dentry, MAX_DENTRY_STRUCT_SEARCH_SIZE))
-	{
-	  return (-1);
-	}
-
-	for (i = 0; i < MAX_DENTRY_STRUCT_SEARCH_SIZE; i += sizeof(target_ulong))
-	{
-	   t1 = get_target_ulong_at(env, dentry+i);
-	   t2 = get_target_ulong_at(env, dentry+i+sizeof(target_ulong));
-	   t3 = get_target_ulong_at(env, dentry+i+(sizeof(target_ulong)*3));
-	printk("%d [%"T_FMT"x, %"T_FMT"x, %"T_FMT"x\n", i, t1, t2, t3);
-	  if (
-	       isKernelAddress(get_target_ulong_at(env, dentry+i))
-	       && isKernelAddress(get_target_ulong_at(env, dentry+i+sizeof(target_ulong)))
-	       && isKernelAddress(get_target_ulong_at(env, dentry+i+(sizeof(target_ulong)*2)))
-	     )
-	  {
-	    if (pPI->dentry_d_parent == INV_OFFSET)
-	    {
-	      pPI->dentry_d_parent = i + (sizeof(target_ulong)*2);
-	    }
-	    if (pPI->dentry_d_name == INV_OFFSET)
-	    {
-	      pPI->dentry_d_name = i + (sizeof(target_ulong)*3);
-	    }
-	    break;
-	  }
-	}
-
-	//now we continue searching (thus not initializing i again
-	// until we fine two consecutive pointers
-	// after which is d_iname
-	//TODO: there is a chance that the HASH will turn up as a
-	// kernel pointer - so we should just check that d_iname is
-	// a character string
-	for (; i < MAX_DENTRY_STRUCT_SEARCH_SIZE; i += sizeof(target_ulong))
-	{
-	  if (
-	       isKernelAddress(get_target_ulong_at(env, dentry+i))
-	       && isKernelAddress(get_target_ulong_at(env, dentry+i+sizeof(target_ulong)))
-	     )
-	  {
-	    if (pPI->dentry_d_iname == INV_OFFSET)
-	    {
-	      pPI->dentry_d_iname = i + sizeof(target_ulong);
-	    }
-	    break;
-	  }
-	}
-	return (0);
-	/** END **/
-}
-#endif
-
-#if 0
-
-
-// is this a hlist_node / hlist_bl_node ?
-int isHListNode(CPUState * env, gva_t addr) {
-  target_ulong next = get_target_ulong_at(env, addr);
-  target_ulong pprev = get_target_ulong_at(env, addr + sizeof(target_ulong));
-  target_ulong prev = 0;
-}
-
 //d_parent is the third pointer - since it is after hlist_bl_node -
 // which contains two pointers
 //Then d_name is right after d_parent
@@ -1469,21 +1335,16 @@ int populate_dentry_struct_offsets(CPUState *env, gva_t dentry, ProcInfo* pPI)
     return (-1);
   }
 
-  //Here is the signature. We will first look for the i_name which is a cstring.
-  //  after we are done with that, we will look for the dentry pointer
-  // (which is d_parent) and we will see if it is a dentry pointer
-  // by using the d_iname offset that we found. The only imitation
-  // here is that this dentry must have a valid d_iname (that is
-  // d_iname is not NULL. We might have to search for this dentry
-  // in practice
+  // Kevin W: Here we try to find the d_iname.  The trick is to find the string which
+  // contains "ld-linux.so", which is the dynamic library loader for linux
   for (i = 0; i < MAX_DENTRY_STRUCT_SEARCH_SIZE; i+=sizeof(target_ulong))
   {
-    if (DECAF_read_mem(env, dentry+i, sizeof(target_ulong), &chr) < 0)
+    char lib_name[11];
+    if (DECAF_read_mem(env, dentry+i, sizeof(lib_name), lib_name) < 0)
       return (-1); // once the memory read fails, we won't want to populate offsets any more
 
-    if ( isPrintableASCII(chr) )
+    if ( !strncmp(lib_name, "ld-linux.so", 11) )
     {
-        monitor_printf(default_mon, "CHAR1 %c \n", chr);
       if (pPI->dentry_d_iname == INV_OFFSET)
       {
         pPI->dentry_d_iname = i;
@@ -1516,7 +1377,7 @@ int populate_dentry_struct_offsets(CPUState *env, gva_t dentry, ProcInfo* pPI)
 
       if (isPrintableASCII(chr))
       {
-        monitor_printf(default_mon, "CHAR2 %c \n", chr);
+        //monitor_printf(default_mon, "CHAR2 %c \n", chr);
         if (pPI->dentry_d_parent == INV_OFFSET)
         {
           pPI->dentry_d_parent = i + (sizeof(target_ulong)*2);
@@ -1525,96 +1386,13 @@ int populate_dentry_struct_offsets(CPUState *env, gva_t dentry, ProcInfo* pPI)
         {
           pPI->dentry_d_name = i + (sizeof(target_ulong)*3);
         }
+        isOffsetPopulated = true;
         return (0);
       }  
     }
   }
-
   return (-1);
-
-  i = sizeof(unsigned int) + sizeof(unsigned); 
-  i += sizeof(target_ulong) + sizeof(target_ulong); //hlist_bl_node is two pointers
-
-  
-  if (pPI->dentry_d_parent == INV_OFFSET)
-  {
-    pPI->dentry_d_parent = i;
-  }
-  if (pPI->dentry_d_name == INV_OFFSET)
-  {
-    pPI->dentry_d_name = i + sizeof(target_ulong);
-  }
-
-  i += sizeof(target_ulong); //push out d_name
-
-  //now we add in the qstr
-  i += sizeof(uint64_t) + sizeof(target_ulong); // u32 (for hash) and u32 for len plus the pointer
-  //now add in the d_inode pointer
-  i += sizeof(target_ulong);
-
-
-  if (pPI->dentry_d_iname == INV_OFFSET)
-  {
-    pPI->dentry_d_iname = i;
-  }
-
-  isOffsetPopulated = true;
-  return (0);
-  
-  /** Not used yet **
-  if (!isStructKernelAddress(dentry, MAX_DENTRY_STRUCT_SEARCH_SIZE))
-  {
-    return (-1);
-  }
-
-  for (i = 0; i < MAX_DENTRY_STRUCT_SEARCH_SIZE; i += sizeof(target_ulong))
-  {
-     t1 = get_target_ulong_at(dentry+i);
-     t2 = get_target_ulong_at(dentry+i+sizeof(target_ulong));
-     t3 = get_target_ulong_at(dentry+i+(sizeof(target_ulong)*3));
-printk("%d [%"T_FMT"x, %"T_FMT"x, %"T_FMT"x\n", i, t1, t2, t3);
-    if (
-         isKernelAddress(get_target_ulong_at(dentry+i))
-         && isKernelAddress(get_target_ulong_at(dentry+i+sizeof(target_ulong)))
-         && isKernelAddress(get_target_ulong_at(dentry+i+(sizeof(target_ulong)*2)))
-       )
-    {
-      if (pPI->dentry_d_parent == INV_OFFSET)
-      {
-        pPI->dentry_d_parent = i + (sizeof(target_ulong)*2);
-      }
-      if (pPI->dentry_d_name == INV_OFFSET)
-      {
-        pPI->dentry_d_name = i + (sizeof(target_ulong)*3);
-      }
-      break;
-    }
-  }
-
-  //now we continue searching (thus not initializing i again
-  // until we fine two consecutive pointers
-  // after which is d_iname 
-  //TODO: there is a chance that the HASH will turn up as a 
-  // kernel pointer - so we should just check that d_iname is
-  // a character string
-  for (; i < MAX_DENTRY_STRUCT_SEARCH_SIZE; i += sizeof(target_ulong))
-  {
-    if (
-         isKernelAddress(get_target_ulong_at(dentry+i))
-         && isKernelAddress(get_target_ulong_at(dentry+i+sizeof(target_ulong)))
-       )
-    {
-      if (pPI->dentry_d_iname == INV_OFFSET)
-      {
-        pPI->dentry_d_iname = i + sizeof(target_ulong);
-      }
-      break;
-    } 
-  }
-  return (0);
-  /** END **/
 }
-#endif
 
 //runs through the guest's memory and populates the offsets within the
 // ProcInfo data structure. Returns the number of elements/offsets found

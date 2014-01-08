@@ -6,10 +6,7 @@
 extern "C" {
 #endif
 
-#define INV_OFFSET ((target_ulong)-1)
-
 typedef target_ulong target_ptr;
-typedef int32_t target_pid_t;
 
 /** Data structure that helps keep things organized. **/
 typedef struct _ProcInfo
@@ -48,6 +45,7 @@ typedef struct _ProcInfo
 	target_ulong vma_vm_next;
 	target_ulong vma_vm_file;
 	target_ulong vma_vm_flags;
+	target_ulong vma_vm_pgoff;
 	target_ulong file_dentry;
 	target_ulong dentry_d_name;
 	target_ulong dentry_d_iname;

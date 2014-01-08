@@ -202,9 +202,11 @@ int taintcheck_chk_hdout(const int size, const int64_t sect_num,
 int taintcheck_chk_hdin(const int size, const int64_t sect_num,
   const uint32_t offset, const void *s)
 {
+#ifdef CONFIG_TCG_TAINT
   /*taint_rec*/ cpu_single_env->tempidx =
       taintcheck_disk_check(sect_num * 8 + offset / 64, offset & 63, size,
                             /*records,*/ s);
+#endif /*CONFIG_TCG_TAINT*/
   return 0;
 }
 
