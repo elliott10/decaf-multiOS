@@ -109,10 +109,12 @@ extern gpa_t DECAF_get_phys_addr(CPUState* env, gva_t addr);
 
 /// Convert virtual address into physical address for given cr3 - cr3 is a phys addr
 //The implementation is target-specific
-extern gpa_t DECAF_get_physaddr_with_cr3(CPUState* env, target_ulong cr3, gva_t addr);
+//extern gpa_t DECAF_get_physaddr_with_cr3(CPUState* env, target_ulong cr3, gva_t addr);
+
+extern gpa_t DECAF_get_phys_addr_with_pgd(CPUState* env, gpa_t pgd, gva_t addr);
 
 //wrapper -- pgd is the generic term while cr3 is the register in x86
-#define DECAF_get_physaddr_with_pgd(_env, _pgd, _addr) DECAF_get_physaddr_with_cr3(_env, _pgd, _addr)
+#define  DECAF_get_physaddr_with_cr3(_env, _pgd, _addr) DECAF_get_phys_addr_with_pgd(_env, _pgd, _addr)
 
 extern DECAF_errno_t DECAF_memory_rw(CPUState* env, gva_t addr, void *buf, int len, int is_write);
 
