@@ -124,11 +124,12 @@ void do_read_taint_mem(DECAF_Callback_Params *param)
 	uint32_t eip=DECAF_getPC(cpu_single_env);
 	uint32_t cr3= DECAF_getPGD(cpu_single_env);
 	char name[128];
-	tmodinfo_t * dm= (tmodinfo_t *) malloc(sizeof(tmodinfo_t));
-	if(VMI_locate_module_c(eip,cr3, name, dm) == -1)
+	tmodinfo_t dm;// (tmodinfo_t *) malloc(sizeof(tmodinfo_t));
+	if(VMI_locate_module_c(eip,cr3, name, &dm) == -1 && !keylogger_log)
+	{
 		DECAF_printf("\n dm is null 0x%08x  \n",cr3);
-	if(!dm|!keylogger_log)
 		return;
+	}
 	if(stack_top)
 	{
 		if(cr3 == cr3_stack[stack_top-1])
@@ -144,10 +145,10 @@ void do_read_taint_mem(DECAF_Callback_Params *param)
 	}
 	if(param->rt.size <=4)
 		fprintf(keylogger_log,"%s   \t 0 \t 0x%08x \t\t 0x%08x \t %d      0x%08x  0x%08x %15s    \t%s\t%s\n",
-			name, param->rt.vaddr, param->rt.paddr, param->rt.size,*((uint32_t *)param->rt.taint_info), eip, dm->name,modname_t,func_name_t);
+			name, param->rt.vaddr, param->rt.paddr, param->rt.size,*((uint32_t *)param->rt.taint_info), eip, dm.name,modname_t,func_name_t);
 	else
 		fprintf(keylogger_log,"%s   \t 0 \t 0x%08x \t\t 0x%08x \t %d      0x%16x  0x%08x %15s     \t%s\t%s\n",
-					name, param->rt.vaddr, param->rt.paddr, param->rt.size,*((unsigned long *)param->rt.taint_info), eip, dm->name,  modname_t,func_name_t);
+					name, param->rt.vaddr, param->rt.paddr, param->rt.size,*((unsigned long *)param->rt.taint_info), eip, dm.name,  modname_t,func_name_t);
 
 
 }
@@ -158,11 +159,12 @@ void do_write_taint_mem(DECAF_Callback_Params *param)
 	uint32_t eip= DECAF_getPC(cpu_single_env);
 	uint32_t cr3= DECAF_getPGD(cpu_single_env);
 	char name[128];
-	tmodinfo_t * dm= (tmodinfo_t *) malloc(sizeof(tmodinfo_t));
-	if(VMI_locate_module_c(eip,cr3, name, dm) == -1)
+	tmodinfo_t  dm;// (tmodinfo_t *) malloc(sizeof(tmodinfo_t));
+	if(VMI_locate_module_c(eip,cr3, name, &dm) == -1 && !keylogger_log)
+	{
 		DECAF_printf("\n dm is null 0x%08x  \n",cr3);
-	if(!dm|!keylogger_log)
-	return;
+		return;
+	}
 
 	if(stack_top)
 	{
@@ -182,10 +184,10 @@ void do_write_taint_mem(DECAF_Callback_Params *param)
 	//		name, param->rt.vaddr, param->rt.paddr, param->rt.size, eip, dm->name, dm->base, dm->size, dm->fullname);
 	if(param->rt.size <=4)
 			fprintf(keylogger_log,"%s   \t 0 \t 0x%08x \t\t 0x%08x \t %d      0x%08x  0x%08x %15s   \t%s\t%s\n",
-				name, param->rt.vaddr, param->rt.paddr, param->rt.size,*((uint32_t *)param->rt.taint_info), eip, dm->name,modname_t,func_name_t);
+				name, param->rt.vaddr, param->rt.paddr, param->rt.size,*((uint32_t *)param->rt.taint_info), eip, dm.name,modname_t,func_name_t);
 		else
 			fprintf(keylogger_log,"%s   \t 0 \t 0x%08x \t\t 0x%08x \t %d      0x%16x  0x%08x %15s    \t%s\t%s\n",
-						name, param->rt.vaddr, param->rt.paddr, param->rt.size,*((unsigned long *)param->rt.taint_info), eip, dm->name, modname_t,func_name_t);
+						name, param->rt.vaddr, param->rt.paddr, param->rt.size,*((unsigned long *)param->rt.taint_info), eip, dm.name, modname_t,func_name_t);
 
 
 
