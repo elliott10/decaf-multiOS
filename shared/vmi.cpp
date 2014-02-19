@@ -396,7 +396,7 @@ int VMI_remove_module(uint32_t pid, uint32_t base)
 
 	proc->module_list.erase(m_iter);
 
-	delete mod;
+//	delete mod;
 	return 0;
 }
 
