@@ -9,8 +9,8 @@
 
 3. start DECAF and load unpacker plugin.
 
-   taint_file sample filename
-   start your sample.
+   trace_by_name "sample program name"
+   start your sample program.
    stop_unpack
 
 

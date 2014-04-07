@@ -74,11 +74,11 @@ static mon_cmd_t unpacker_term_cmds[] = {
 				.help="Set the maximum unpacking rounds (100 by default)",
 		},
 		{
-				.name="taint_file",
-				.args_type="filename:sii,id:i",
-				.mhandler=do_taint_file,
-				.params="filename id",
-				.help="Tait the content of a file on disk, id=[100..199]",
+				.name="trace_by_name",
+				.args_type="filename:s",
+				.mhandler=do_trace_process,
+				.params="filename",
+				.help="specify the process name",
 
 		},
 		{
@@ -124,7 +124,7 @@ static inline const char *get_basename(const char *path)
       return &path[i + 1];
   return path;
 }
-void do_taint_file(Monitor *mon, const QDict *qdict)
+void do_trace_process(Monitor *mon, const QDict *qdict)
 {
 	const char *filename=qdict_get_str(qdict,"filename");
 	const char *basename=get_basename(filename);
@@ -134,7 +134,7 @@ void do_taint_file(Monitor *mon, const QDict *qdict)
 	}
 	strncpy(unpack_basename,filename,256);
 	unpack_basename[255]='\0';
-	DECAF_printf("Taint file done!\nWaiting for process %s(case sensitive to start)\n",unpack_basename);
+	DECAF_printf("Waiting for process %s(case sensitive to start)\n",unpack_basename);
 	return;
 
 }
@@ -237,8 +237,8 @@ static void unpacker_block_begin(DECAF_Callback_Params*dcp)
     uint64_t mybitmap=0;
     mybitmap=check_mem_mark(eip,1);
     if(mybitmap>0){
-    	DECAF_printf(default_mon,"will dump this region: eip=%08x \n", eip);
-    	printf("Suspicious activity!\n");
+    	DECAF_printf("will dump this region: eip=%08x \n", eip);
+    	DECAF_printf("Suspicious activity!\n");
     	fprintf(unpacker_log, "suspcious instruction: eip=%08x \n", eip);
     	fflush(unpacker_log);
     	dump_unpacked_code();

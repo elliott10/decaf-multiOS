@@ -24,7 +24,7 @@ void do_stop_unpack();
 
 //change to decaf interface as
 void do_set_max_unpack_rounds(Monitor *mon, const QDict *qdict);
-void do_taint_file(Monitor *mon, const QDict *qdict);
+void do_trace_process(Monitor *mon, const QDict *qdict);
 void do_stop_unpack(Monitor *mon, const QDict *qdict);
 void do_linux_ps(Monitor *mon, const QDict *qdict);
 void do_guest_procs(Monitor *mon, const QDict *qdict);
