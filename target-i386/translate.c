@@ -107,7 +107,7 @@ static TCGv_i32 cpu_tmp2_i32, cpu_tmp3_i32;
 static TCGv_i64 cpu_tmp1_i64;
 static TCGv cpu_tmp5;
 #ifdef CONFIG_TCG_TAINT
-static TCGv cpu_tmp6;
+//static TCGv cpu_tmp6;
 /* This needs to be accessable to the taint generation function so that
    this metadata can be updated as more taint IRs are added to the TB. */
 uint8_t gen_opc_cc_op[OPC_BUF_SIZE];
@@ -8010,7 +8010,7 @@ void optimize_flags_init(void)
 }
 
 #ifdef CONFIG_TCG_IR_LOG
-inline void log_tcg_ir(TranslationBlock *tb)
+static inline void log_tcg_ir(TranslationBlock *tb)
 {
   int i;
 
@@ -8146,6 +8146,12 @@ static inline void gen_intermediate_code_internal(CPUState *env,
             QTAILQ_FOREACH(bp, &env->breakpoints, entry) {
                 if (bp->pc == pc_ptr &&
                     !((bp->flags & BP_CPU) && (tb->flags & HF_RF_MASK))) {
+#ifdef CONFIG_TCG_LLVM
+                    if (DECAF_is_callback_needed(DECAF_BLOCK_TRANS_CB)) {
+                      tb->icount = num_insns;
+                      helper_DECAF_invoke_block_trans_callback(tb, &tcg_ctx);
+                    }
+#endif /* CONFIG_TCG_LLVM */
 #ifdef CONFIG_TCG_IR_LOG
                     log_tcg_ir(tb);
 #endif /* CONFIG_TCG_IR_LOG */
@@ -8181,6 +8187,12 @@ static inline void gen_intermediate_code_internal(CPUState *env,
         /* stop translation if indicated */
         if (dc->is_jmp)
         {
+#ifdef CONFIG_TCG_LLVM
+          if(DECAF_is_callback_needed(DECAF_BLOCK_TRANS_CB)) {
+            tb->icount = num_insns;
+            helper_DECAF_invoke_block_trans_callback(tb, &tcg_ctx);
+          }
+#endif /* CONFIG_TCG_LLVM */
 #ifdef CONFIG_TCG_IR_LOG
             log_tcg_ir(tb);
 #endif /* CONFIG_TCG_IR_LOG */
@@ -8197,6 +8209,13 @@ static inline void gen_intermediate_code_internal(CPUState *env,
            change to be happen */
         if (dc->tf || dc->singlestep_enabled ||
             (flags & HF_INHIBIT_IRQ_MASK)) {
+#ifdef CONFIG_TCG_LLVM
+            if(DECAF_is_callback_needed(DECAF_BLOCK_TRANS_CB))
+            {
+              tb->icount = num_insns;
+              helper_DECAF_invoke_block_trans_callback(tb, &tcg_ctx);
+            }
+#endif /* CONFIG_TCG_LLVM */
 #ifdef CONFIG_TCG_IR_LOG
             log_tcg_ir(tb);
 #endif /* CONFIG_TCG_IR_LOG */
@@ -8212,6 +8231,13 @@ static inline void gen_intermediate_code_internal(CPUState *env,
         if (gen_opc_ptr >= gen_opc_end ||
             (pc_ptr - pc_start) >= (TARGET_PAGE_SIZE - 32) ||
             num_insns >= max_insns) {
+#ifdef CONFIG_TCG_LLVM
+            if(DECAF_is_callback_needed(DECAF_BLOCK_TRANS_CB))
+            {
+              tb->icount = num_insns;
+              helper_DECAF_invoke_block_trans_callback(tb, &tcg_ctx);
+            }
+#endif /* CONFIG_TCG_LLVM */
 #ifdef CONFIG_TCG_IR_LOG
             log_tcg_ir(tb);
 #endif /* CONFIG_TCG_IR_LOG */
@@ -8224,6 +8250,13 @@ static inline void gen_intermediate_code_internal(CPUState *env,
             break;
         }
         if (singlestep) {
+#ifdef CONFIG_TCG_LLVM
+          if(DECAF_is_callback_needed(DECAF_BLOCK_TRANS_CB))
+          {
+            tb->icount = num_insns;
+            helper_DECAF_invoke_block_trans_callback(tb, &tcg_ctx);
+          }
+#endif /* CONFIG_TCG_LLVM */
 #ifdef CONFIG_TCG_IR_LOG
             log_tcg_ir(tb);
 #endif /* CONFIG_TCG_IR_LOG */

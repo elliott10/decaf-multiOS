@@ -170,6 +170,17 @@ void tlb_set_page(CPUState *env, target_ulong vaddr,
 #define USE_DIRECT_JUMP
 #endif
 
+#ifdef CONFIG_TCG_LLVM
+struct TCGLLVMTranslationBlock;
+struct TCGLLVMContext;
+#ifdef __cplusplus
+namespace llvm { class Function; }
+using llvm::Function;
+#else
+struct Function;
+#endif
+#endif /* CONFIG_TCG_LLVM */
+
 struct TranslationBlock {
     target_ulong pc;   /* simulated PC corresponding to this block (EIP + CS base) */
     target_ulong cs_base; /* CS base for this block */
@@ -203,6 +214,14 @@ struct TranslationBlock {
     struct TranslationBlock *jmp_next[2];
     struct TranslationBlock *jmp_first;
     uint32_t icount;
+#ifdef CONFIG_TCG_LLVM
+    /* pointer to LLVM translated code */
+    struct TCGLLVMContext *tcg_llvm_context;
+    struct Function *llvm_function;
+    uint8_t *llvm_tc_ptr;
+    uint8_t *llvm_tc_end;
+    struct TranslationBlock* llvm_tb_next[2];
+#endif /* CONFIG_TCG_LLVM */
 #ifdef CONFIG_TCG_IR_LOG
     uint8_t DECAF_logged; /* AWH - Has this been logged to disk? */
     uint16_t *DECAF_gen_opc_buf; /* AWH - IR ops in this TB */

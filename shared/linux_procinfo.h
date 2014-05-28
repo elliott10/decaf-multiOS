@@ -51,19 +51,23 @@ typedef struct _ProcInfo
 	target_ulong dentry_d_iname;
 	target_ulong dentry_d_parent;
 	target_ulong ti_task;
+// #ifdef TARGET_MIPS
+	target_ulong mips_pgd_current;
+// #endif	
 } ProcInfo;
 
-int populate_mm_struct_offsets(CPUState *env, target_ptr mm, ProcInfo* pPI);
-int populate_vm_area_struct_offsets(CPUState *env, target_ptr vma, ProcInfo* pPI);
-int populate_dentry_struct_offsets(CPUState * env, target_ptr dentry, ProcInfo* pPI);
-int getDentryFromFile(CPUState * env, target_ptr file, ProcInfo* pPI);
-//runs through the guest's memory and populates the offsets within the
-// ProcInfo data structure. Returns the number of elements/offsets found
-// or -1 if error
-int populate_kernel_offsets(CPUState *env, target_ptr threadinfo, ProcInfo* pPI);
+// int populate_mm_struct_offsets(CPUState *env, target_ptr mm, ProcInfo* pPI);
+// int populate_vm_area_struct_offsets(CPUState *env, target_ptr vma, ProcInfo* pPI);
+// int populate_dentry_struct_offsets(CPUState * env, target_ptr dentry, ProcInfo* pPI);
+// int getDentryFromFile(CPUState * env, target_ptr file, ProcInfo* pPI);
+// //runs through the guest's memory and populates the offsets within the
+// // ProcInfo data structure. Returns the number of elements/offsets found
+// // or -1 if error
+// int populate_kernel_offsets(CPUState *env, target_ptr threadinfo, ProcInfo* pPI);
 
 int printProcInfo(ProcInfo* pPI);
-
+int load_proc_info(CPUState * env, gva_t threadinfo, ProcInfo &pi);
+void load_library_info(const char *strName);
 
 #ifdef __cplusplus
 };

@@ -33,7 +33,6 @@
 #define GEN_HELPER 1
 #include "helper.h"
 #include "shared/DECAF_callback_to_QEMU.h"
-//#include "DECAF_callback.h" // AWH
 
 #ifdef CONFIG_TCG_TAINT
 #include "shared/tainting/taint_memory.h"
@@ -10121,6 +10120,10 @@ static inline void gen_intermediate_code_internal(CPUState *env,
 
         if (num_insns + 1 == max_insns && (tb->cflags & CF_LAST_IO))
             gen_io_start();
+
+	/* Mimic x86 INSN_BEGIN callbacks */
+	if (DECAF_is_callback_needed(DECAF_INSN_BEGIN_CB))
+		gen_helper_DECAF_invoke_insn_begin_callback(cpu_env);
 
         if (unlikely(qemu_loglevel_mask(CPU_LOG_TB_OP))) {
             tcg_gen_debug_insn_start(dc->pc);

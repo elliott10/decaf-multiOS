@@ -62,19 +62,19 @@ using namespace std::tr1;
 #define PROCESS_NAME_SIZE 16
 int  VMI_locate_module_c(gva_t eip, gva_t cr3, char proc[],tmodinfo_t *tm)
 {
-	module * m = NULL;
+	module *m;
+	process *p;
     gva_t base = 0;
-    if(!tm)
-    {
-    	DECAF_printf("tm is NULL");
+
+    p = VMI_find_process_by_pgd(cr3);
+    if (!p)
     	return -1;
-    }
-    	bzero(tm, sizeof(tmodinfo_t));
-	m = VMI_find_module_by_pc(eip, cr3,&base);
+
+	m = VMI_find_module_by_pc(eip, cr3, &base);
 	if(!m)
-		return NULL;
-	strncpy(tm->name,m->name, MODULE_NAME_SIZE ) ;
-	strncpy(proc, m->name, MODULE_NAME_SIZE);
+		return -1;
+	strncpy(tm->name, m->name, MODULE_NAME_SIZE ) ;
+	strncpy(proc, p->name, sizeof(p->name));
 	tm->base = base;
 	tm->size = m->size;
 	return 0;
@@ -124,7 +124,7 @@ int VMI_find_pid_by_cr3_c(uint32_t cr3)
 	return p->cr3;
 }
 
-int VMI_find_pid_by_name_c(char* proc_name)
+int VMI_find_pid_by_name_c(const char* proc_name)
 {
 	process *p = NULL;
 	p = VMI_find_process_by_name(proc_name);
@@ -276,7 +276,7 @@ int VMI_get_guest_version_c(void)
 		return 2;//linux
 	return 0;//unknown
 }
-int VMI_get_current_tid_c(CPUState* env)
+int VMI_get_current_tid_c(CPUState* _env)
 {
 #ifdef TARGET_I386
 	uint32_t val;
@@ -289,12 +289,12 @@ int VMI_get_current_tid_c(CPUState* env)
 	if (VMI_guest_kernel_base != 0x80000000)
 		return -1;
 
-	if (!DECAF_is_in_kernel()) { // user module
-		if (DECAF_read_mem(env, cpu_single_env->segs[R_FS].base + 0x18, 4, &val) != -1
-				&& DECAF_read_mem(env, val + 0x24, 4, &tid) != -1)
+	if (!DECAF_is_in_kernel(_env)) { // user module
+		if (DECAF_read_mem(_env, /* AWH cpu_single*/_env->segs[R_FS].base + 0x18, 4, &val) != -1
+				&& DECAF_read_mem(_env, val + 0x24, 4, &tid) != -1)
 			return tid;
-	} else if (DECAF_read_mem(env, cpu_single_env->segs[R_FS].base + 0x124, 4, &val)
-			!= -1 && DECAF_read_mem(env, val + 0x1F0, 4, &tid) != -1)
+	} else if (DECAF_read_mem(_env, /* AWH cpu_single*/_env->segs[R_FS].base + 0x124, 4, &val)
+			!= -1 && DECAF_read_mem(_env, val + 0x1F0, 4, &tid) != -1)
 		return tid;
 #endif
 

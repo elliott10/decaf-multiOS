@@ -108,6 +108,8 @@ target_list=""
 # Distributions want to ensure that several features are compiled in, and it
 # is impossible without a --enable-foo that exits if a feature is not found.
 
+#AWH - LLVM support disabled by default
+tcg_llvm="no"
 #AWH - VMI enabled by default
 enable_vmi="yes"
 #AWH - TCG tainting off by default
@@ -811,11 +813,17 @@ for opt do
   ;;
   --disable-tcg-ir-log) tcg_ir_log="no"
   ;;
+  # AWH - TCG LLVM support
+  --enable-tcg-llvm) tcg_llvm="yes"
+  ;;
+  --disable-tcg-llvm) tcg_llvm="no"
+  ;;
   # AWH - VMI support
   --enable-vmi) enable_vmi="yes"
   ;;
   --disable-vmi) enable_vmi="no"
   ;;
+
   *) echo "ERROR: unknown option $opt"; show_help="yes"
   ;;
   esac
@@ -905,6 +913,7 @@ if [ "$softmmu" = "yes" ] ; then
     default_target_list="\
 i386-softmmu \
 arm-softmmu \
+mips-softmmu \
 "
 fi
 #x86_64-softmmu \
@@ -1115,6 +1124,9 @@ echo "  --enable-tcg-taint       enable taint IR generation via TCG"
 # AWH - TCG IR logging
 echo "  --disable-tcg-ir-log     disable TCG IR logging buffers (default)"
 echo "  --enable-tcg-ir-log      enable TCG IR logging buffers"
+# AWH - TCG-to-LLVM translation
+echo "  --disable-tcg-llvm       disable TCG-to-LLVM translation (default)"
+echo "  --enable-tcg-llvm        enable TCG-to-LLVM translation"
 # AWH - VMI enable
 echo "  --disable-vmi            disable VMI support"
 echo "  --enable-vmi             enable VMI support (default)"
@@ -2919,6 +2931,8 @@ echo "build guest agent $guest_agent"
 echo "enable TCG taint  $tcg_taint"
 # AWH - TCG IR logging
 echo "enable IR logging $tcg_ir_log"
+#AWH - TCG LLVM
+echo "enable TCG LLVM   $tcg_llvm"
 # AWH - VMI
 echo "enable VMI        $enable_vmi"
 
@@ -2967,7 +2981,10 @@ esac
 if test "$enable_vmi" = "yes" ; then
   echo "CONFIG_VMI_ENABLE=y" >> $config_host_mak
 fi
-
+#AWH - TCG LLVM
+if test "$tcg_llvm" = "yes" ; then
+  echo "CONFIG_TCG_LLVM=y" >> $config_host_mak
+fi
 #AWH - TCG tainting
 if test "$tcg_taint" = "yes" ; then
   echo "CONFIG_TCG_TAINT=y" >> $config_host_mak

@@ -13,6 +13,7 @@ http://sycurelab.ecs.syr.edu/
 If you have any questions about DECAF,please post it on
 http://code.google.com/p/decaf-platform/
 */
+#include "DECAF_main.h"
 #include "DECAF_cmds.h"
 #include "vmi_c_wrapper.h"
 

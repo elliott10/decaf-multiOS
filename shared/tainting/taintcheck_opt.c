@@ -172,8 +172,6 @@ int taintcheck_init(void)
 
 void taintcheck_cleanup(void)
 {
-  int i;
-
   //clean nic buffer
   bzero(nic_bitmap, sizeof(nic_bitmap));
   //clean disk
@@ -259,6 +257,12 @@ int  taintcheck_check_virtmem(uint32_t vaddr, uint32_t size, uint8_t * taint)
 	// uint8_t taint=0;
 	CPUState *env;
 	env = cpu_single_env ? cpu_single_env : first_cpu;
+
+	// AWH - If tainting is disabled, return no taint
+	if (!taint_tracking_enabled) {
+		*taint = 0;
+		return 1;
+	}
 
 	paddr = DECAF_get_phys_addr(env,vaddr);
 	if(paddr == -1) return 0;

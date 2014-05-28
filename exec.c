@@ -575,20 +575,19 @@ static void code_gen_alloc(unsigned long tb_size)
     map_exec(code_gen_prologue, sizeof(code_gen_prologue));
     code_gen_buffer_max_size = code_gen_buffer_size -
         (TCG_MAX_OP_SIZE * OPC_BUF_SIZE);
-#if (defined(CONFIG_TCG_IR_LOG) && (TCG_TARGET_REG_BITS == 32))
-/* AWH - For people running DECAF on a 32-bit machine, the IR storage
-  will require too much RAM.  So, for 32-bit systems, we make the number
-  of code blocks much smaller. */
+#if defined(CONFIG_TCG_IR_LOG)
+/* AWH - IR storage requires too much RAM for the default code_gen_max_blocks.  
+   So, we make the number of code blocks much smaller. */
     code_gen_max_blocks = code_gen_buffer_size / CODE_GEN_AVG_BLOCK_SIZE / 16;
 #else
     code_gen_max_blocks = code_gen_buffer_size / CODE_GEN_AVG_BLOCK_SIZE;
-#endif /* CONFIG_TCG_IR_LOG && (TCG_TARGET_REG_BITS == 32) */
+#endif /* CONFIG_TCG_IR_LOG */
     tbs = g_malloc(code_gen_max_blocks * sizeof(TranslationBlock));
 #ifdef CONFIG_TCG_IR_LOG
 fprintf(stderr, "AWH: code_gen_alloc(): code_gen_max_blocks: %d\n", code_gen_max_blocks);
-fprintf(stderr, "AWH: code_gen_alloc(): gDECAF_gen_opc_buf: %d\n", (OPC_MAX_SIZE+ TCG_IR_LOG_PADDING) * sizeof(uint16_t) * code_gen_max_blocks);
+fprintf(stderr, "AWH: code_gen_alloc(): gDECAF_gen_opc_buf: %dk\n", ((OPC_MAX_SIZE+ TCG_IR_LOG_PADDING) * sizeof(uint16_t) * code_gen_max_blocks) >> 10);
     gDECAF_gen_opc_buf = g_malloc((OPC_MAX_SIZE + TCG_IR_LOG_PADDING) * sizeof(uint16_t) * code_gen_max_blocks);
-fprintf(stderr, "AWH: code_gen_alloc(): gDECAF_gen_opparam_buf: %d\n", (OPC_MAX_SIZE + TCG_IR_LOG_PADDING) * sizeof(TCGArg) * 6 * code_gen_max_blocks);
+fprintf(stderr, "AWH: code_gen_alloc(): gDECAF_gen_opparam_buf: %dk\n", ((OPC_MAX_SIZE + TCG_IR_LOG_PADDING) * sizeof(TCGArg) * 6 * code_gen_max_blocks) >> 10);
     gDECAF_gen_opparam_buf = g_malloc((OPC_MAX_SIZE + TCG_IR_LOG_PADDING) * sizeof(TCGArg) * 6 * code_gen_max_blocks);
 
     for (i = 0; i < code_gen_max_blocks; i++) {

@@ -146,10 +146,12 @@ extern DECAF_errno_t DECAF_write_mem(CPUState* env, gva_t vaddr, int len, void *
 
 extern DECAF_errno_t DECAF_read_mem_with_pgd(CPUState* env, target_ulong pgd, gva_t vaddr, int len, void *buf);
 extern DECAF_errno_t DECAF_write_mem_with_pgd(CPUState* env, target_ulong pgd, gva_t vaddr, int len, void *buf);
-
+DECAF_errno_t DECAF_read_ptr(CPUState *env, gva_t vaddr, gva_t *pptr);
 
 
 extern void * DECAF_KbdState;
+extern void DECAF_keystroke_read(uint8_t taint_status);
+extern void DECAF_keystroke_place(int keycode);
 
 /// \brief Set monitor context.
 ///

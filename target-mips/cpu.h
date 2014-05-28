@@ -145,10 +145,11 @@ typedef struct mips_def_t mips_def_t;
 typedef struct TCState TCState;
 struct TCState {
     target_ulong gpr[32];
-#ifdef CONFIG_TCG_TAINT
-    target_ulong taint_regs[32];
-#endif /* CONFIG_TCG_TAINT */
     target_ulong PC;
+#ifdef CONFIG_TCG_TAINT
+    target_ulong taint_gpr[32];
+    target_ulong taint_PC;
+#endif /* CONFIG_TCG_TAINT */
     target_ulong HI[MIPS_DSP_ACC];
     target_ulong LO[MIPS_DSP_ACC];
     target_ulong ACX[MIPS_DSP_ACC];

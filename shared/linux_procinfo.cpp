@@ -23,12 +23,19 @@
 #include <inttypes.h>
 #include <string>
 #include <list>
+#include <vector>
 #include <assert.h>
 #include <errno.h>
 #include <string.h>
 #include <stdio.h>
 #include <tr1/unordered_map>
 #include <tr1/unordered_set>
+
+#include <boost/foreach.hpp>
+#include <boost/property_tree/ptree.hpp>
+#include <boost/property_tree/ini_parser.hpp>
+#include <boost/lexical_cast.hpp>
+
 #include <stdlib.h>
 #include <unistd.h>
 #include <signal.h>
@@ -37,12 +44,13 @@
 #include <math.h>
 #include <glib.h>
 #include <mcheck.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif /* __cplusplus */
 #include "cpu.h"
 #include "config.h"
-#include "hw/hw.h" // AWH
+#include "hw/hw.h" // AWH  
 #include "DECAF_main.h"
 #include "DECAF_target.h"
 #ifdef __cplusplus
@@ -55,6 +63,7 @@ extern "C" {
 #include "shared/vmi.h"
 #include "DECAF_main.h"
 #include "shared/utils/SimpleCallback.h"
+
 
 
 #ifdef TARGET_I386
@@ -117,7 +126,7 @@ typedef target_int target_pid_t;
 #define INV_OFFSET ((target_ulong) -1)
 #define INV_UINT ((target_uint) -1)
 
-#if defined(TARGET_I386) || defined(TARGET_ARM)
+#if defined(TARGET_I386) || defined(TARGET_ARM)//  || defined(TARGET_MIPS)
   //this is the default value - but keep in mind that a custom built
   // kernel can change this
   #define TARGET_PAGE_OFFSET 0xC0000000
@@ -126,6 +135,11 @@ typedef target_int target_pid_t;
   // for isKernelAddress can be standardized
   #define TARGET_KERNEL_IMAGE_START TARGET_PAGE_OFFSET
   #define TARGET_MIN_STACK_START 0xA0000000 //trial and error?
+  #define TARGET_KERNEL_IMAGE_SIZE (0)
+#elif defined(TARGET_MIPS)
+  #define TARGET_PAGE_OFFSET  0x80000000UL
+  #define TARGET_KERNEL_IMAGE_START TARGET_PAGE_OFFSET
+  #define TARGET_MIN_STACK_START 0xA0000000UL //trial and error?
   #define TARGET_KERNEL_IMAGE_SIZE (0)
 #else
   //See: http://lxr.linux.no/#linux+v3.11/Documentation/x86/x86_64/mm.txt
@@ -189,7 +203,8 @@ typedef target_int target_pid_t;
 // 0xC0000000 are valid, some are not 
 // depending on whether the virtual address range is used
 // we can figure this out by searching through the page tables
-static inline int isKernelAddress(gva_t addr)
+static inline
+int isKernelAddress(gva_t addr)
 {
   return (
     //the normal kernel memory area
@@ -255,7 +270,8 @@ static inline int get_mem_at(CPUState *env, gva_t addr, void* buf, size_t count)
 //The idea is to go through the data structures and find an
 // item that points back to the threadinfo
 //ASSUMES PTR byte aligned
-gva_t findTaskStructFromThreadInfo(CPUState * env, gva_t threadinfo, ProcInfo* pPI, int bDoubleCheck)
+// gva_t findTaskStructFromThreadInfo(CPUState * env, gva_t threadinfo, ProcInfo* pPI, int bDoubleCheck) __attribute__((optimize("O0")));
+gva_t  findTaskStructFromThreadInfo(CPUState * env, gva_t threadinfo, ProcInfo* pPI, int bDoubleCheck)
 {
   int bFound = 0;
   target_ulong i = 0;
@@ -274,7 +290,9 @@ gva_t findTaskStructFromThreadInfo(CPUState * env, gva_t threadinfo, ProcInfo* p
   for (i = 0; i < MAX_THREAD_INFO_SEARCH_SIZE; i+= sizeof(target_ptr))
   {
     temp = (threadinfo + i);
-    candidate = (get_target_ulong_at(env, temp));
+    candidate = 0;
+    // candidate = (get_target_ulong_at(env, temp));
+    DECAF_read_ptr(env, temp, &candidate);
     //if it looks like a kernel address
     if (isKernelAddress(candidate))
     {
@@ -283,8 +301,10 @@ gva_t findTaskStructFromThreadInfo(CPUState * env, gva_t threadinfo, ProcInfo* p
       {
         temp2 = (candidate + j);
         //if there is an entry that has the same 
-        // value as threadinfo then we are set 
-        if (get_target_ulong_at(env, temp2) == threadinfo)
+        // value as threadinfo then we are set
+        target_ulong val = 0;
+        DECAF_read_ptr(env, temp2, &val);
+        if (val == threadinfo)
         {
           if (bFound)
           {
@@ -1580,3 +1600,280 @@ int printProcInfo(ProcInfo* pPI)
   return (0);
 }
 
+void get_executable_directory(string &sPath)
+{
+  int rval;
+  char szPath[1024];
+  sPath = "";
+  rval = readlink("/proc/self/exe", szPath, sizeof(szPath)-1);
+  if(-1 == rval)
+  {
+    monitor_printf(default_mon, "can't get path of main executable.\n");
+    return;
+  }
+  szPath[rval-1] = '\0';
+  sPath = szPath;
+  sPath = sPath.substr(0, sPath.find_last_of('/'));
+  sPath += "/";
+  return;
+}
+
+void get_procinfo_directory(string &sPath)
+{
+  get_executable_directory(sPath);
+  sPath += "../shared/kernelinfo/procinfo_generic/";
+  return;
+}
+
+// given the section number, load the offset values
+#define FILL_TARGET_ULONG_FIELD(field) pi.field = pt.get<target_ulong>(sSectionNum + #field)
+void _load_one_section(const boost::property_tree::ptree &pt, int iSectionNum, ProcInfo &pi)
+{
+    string sSectionNum;
+
+    sSectionNum = boost::lexical_cast<string>(iSectionNum);
+    sSectionNum += ".";
+
+    // fill strName field
+    string sName;
+    const int SIZE_OF_STR_NAME = 32;
+    sName = pt.get<string>(sSectionNum + "strName");
+    strncpy(pi.strName, sName.c_str(), SIZE_OF_STR_NAME);
+    pi.strName[SIZE_OF_STR_NAME-1] = '\0';
+
+    // fill other fields
+    FILL_TARGET_ULONG_FIELD(init_task_addr  );
+    FILL_TARGET_ULONG_FIELD(init_task_size  );
+    FILL_TARGET_ULONG_FIELD(ts_tasks        );
+    FILL_TARGET_ULONG_FIELD(ts_pid          );
+    FILL_TARGET_ULONG_FIELD(ts_tgid         );
+    FILL_TARGET_ULONG_FIELD(ts_group_leader );
+    FILL_TARGET_ULONG_FIELD(ts_thread_group );
+    FILL_TARGET_ULONG_FIELD(ts_real_parent  );
+    FILL_TARGET_ULONG_FIELD(ts_mm           );
+    FILL_TARGET_ULONG_FIELD(ts_stack        );
+    FILL_TARGET_ULONG_FIELD(ts_real_cred    );
+    FILL_TARGET_ULONG_FIELD(ts_cred         );
+    FILL_TARGET_ULONG_FIELD(ts_comm         );
+    FILL_TARGET_ULONG_FIELD(cred_uid        );
+    FILL_TARGET_ULONG_FIELD(cred_gid        );
+    FILL_TARGET_ULONG_FIELD(cred_euid       );
+    FILL_TARGET_ULONG_FIELD(cred_egid       );
+    FILL_TARGET_ULONG_FIELD(mm_mmap         );
+    FILL_TARGET_ULONG_FIELD(mm_pgd          );
+    FILL_TARGET_ULONG_FIELD(mm_arg_start    );
+    FILL_TARGET_ULONG_FIELD(mm_start_brk    );
+    FILL_TARGET_ULONG_FIELD(mm_brk          );
+    FILL_TARGET_ULONG_FIELD(mm_start_stack  );
+    FILL_TARGET_ULONG_FIELD(vma_vm_start    );
+    FILL_TARGET_ULONG_FIELD(vma_vm_end      );
+    FILL_TARGET_ULONG_FIELD(vma_vm_next     );
+    FILL_TARGET_ULONG_FIELD(vma_vm_file     );
+    FILL_TARGET_ULONG_FIELD(vma_vm_flags    );
+    FILL_TARGET_ULONG_FIELD(vma_vm_pgoff    );
+    FILL_TARGET_ULONG_FIELD(file_dentry     );
+    FILL_TARGET_ULONG_FIELD(dentry_d_name   );
+    FILL_TARGET_ULONG_FIELD(dentry_d_iname  );
+    FILL_TARGET_ULONG_FIELD(dentry_d_parent );
+    FILL_TARGET_ULONG_FIELD(ti_task         );
+#ifdef TARGET_MIPS
+    FILL_TARGET_ULONG_FIELD(mips_pgd_current);
+#endif
+}
+
+// find the corresponding section for the current os and return the section number
+int find_match_section(const boost::property_tree::ptree &pt, target_ulong tulInitTaskAddr)
+{
+    int cntSection = pt.get("info.total", 0);
+
+    string sSectionNum;
+    vector<int> vMatchNum;
+
+    monitor_printf(default_mon, "Total Sections: %d\n", cntSection);
+
+    for(int i = 1; i<=cntSection; ++i)
+    {
+      sSectionNum = boost::lexical_cast<string>(i);
+      target_ulong tulAddr = pt.get<target_ulong>(sSectionNum + ".init_task_addr");
+      if(tulAddr == tulInitTaskAddr)
+      {
+        vMatchNum.push_back(i);
+      }
+    }
+
+    if(vMatchNum.size() > 1)
+    {
+      monitor_printf(default_mon, "Too many match sections in procinfo.ini\n");
+      return 0;
+      // for(int i=0;i<vMatchNum.size();++i)
+      // {
+      //   monitor_printf(default_mon, "[%d] ", vMatchNum[i]);
+      // }
+      // monitor_printf(default_mon, "\nPlease input the corresponding section number for the operating system\n");
+      // int iNum = 100;
+      // // cin >> iNum;
+      // DECAF_stop_vm();
+      // scanf("%d", &iNum);
+
+      // cout << "iNum" << iNum << endl;
+      // DECAF_start_vm();
+      // bool bMatch = false;
+      // for(int i=0;i<vMatchNum.size();++i)
+      // {
+      //   if(iNum == vMatchNum[i])
+      //   {
+      //     bMatch = true;
+      //   }
+      // }
+
+      // if(bMatch)
+      // {
+      //   return iNum;
+      // }
+      // else
+      // {
+      //   monitor_printf(default_mon, "Invalid section number\n");
+      //   return 0;
+      // }
+    }
+    
+    if(vMatchNum.size() <= 0)
+    {
+      monitor_printf(default_mon, "No match in procinfo.ini\n");
+      return 0;        
+    }
+
+    return vMatchNum[0];
+}
+
+
+
+// infer init_task_addr, use the init_task_addr to search for the corresponding
+// section in procinfo.ini. If found, fill the fields in ProcInfo struct.
+int load_proc_info(CPUState * env, gva_t threadinfo, ProcInfo &pi)
+{
+  static bool bProcinfoMisconfigured = false;
+  const int CANNOT_FIND_INIT_TASK_STRUCT = -1;
+  const int CANNOT_OPEN_PROCINFO = -2;
+  const int CANNOT_MATCH_PROCINFO_SECTION = -3;
+  target_ulong tulInitTaskAddr;
+
+  if(bProcinfoMisconfigured)
+  {
+   return CANNOT_MATCH_PROCINFO_SECTION;
+  }
+
+  // find init_task_addr
+  tulInitTaskAddr = findTaskStructFromThreadInfo(env, threadinfo, &pi, 0);
+  // tulInitTaskAddr = 2154330880;
+  if (INV_ADDR == tulInitTaskAddr)
+  {
+    return CANNOT_FIND_INIT_TASK_STRUCT;
+  }
+
+  string sProcInfoPath;
+  boost::property_tree::ptree pt;
+  get_procinfo_directory(sProcInfoPath);
+  sProcInfoPath += "procinfo.ini";
+  monitor_printf(default_mon, "Procinfo path: %s\n",sProcInfoPath.c_str());
+  // read procinfo.ini
+  if (0 != access(sProcInfoPath.c_str(), 0))
+  {
+      monitor_printf(default_mon, "can't open %s\n", sProcInfoPath.c_str());
+      return CANNOT_OPEN_PROCINFO;
+  }
+  boost::property_tree::ini_parser::read_ini(sProcInfoPath, pt);
+
+  // find the match section using previously found init_task_addr
+  int iSectionNum = find_match_section(pt, tulInitTaskAddr);
+  // no match or too many match sections
+  if(0 == iSectionNum)
+  {
+    monitor_printf(default_mon, "VMI won't work.\nPlease configure procinfo.ini and restart DECAF.\n");
+    // exit(0);
+    bProcinfoMisconfigured = true;
+    return CANNOT_MATCH_PROCINFO_SECTION;
+  }
+
+  _load_one_section(pt, iSectionNum, pi);
+  monitor_printf(default_mon, "Match %s\n", pi.strName);
+  return 0;
+}
+
+class LibraryLoader
+{
+public:
+  LibraryLoader(const char *strName)
+  {
+    if(init_property_tree(strName))
+    {
+      load();
+    }
+  }
+private:
+
+  bool init_property_tree(const char* strName)
+  {
+    string sLibConfPath;
+    get_procinfo_directory(sLibConfPath);
+    const string LIB_CONF_DIR = "lib_conf/";
+    sLibConfPath = sLibConfPath + LIB_CONF_DIR + strName + ".ini";
+
+    if (0 != access(sLibConfPath.c_str(), 0))
+    {
+        monitor_printf(default_mon, "Can't open %s\nLibrary function offset will not be loaded.\n", sLibConfPath.c_str());
+        return false;
+    }
+
+    boost::property_tree::ini_parser::read_ini(sLibConfPath, m_pt);
+    return true;
+  }
+
+
+  void load()
+  {
+    // load every section
+    int cntSection = m_pt.get("info.total", 0);
+    string sSectionNum;
+
+    monitor_printf(default_mon, "Lib Configuration Total Sections: %d\n", cntSection);
+
+    for(int i = 1; i<=cntSection; ++i)
+    {
+      sSectionNum = boost::lexical_cast<string>(i);
+      m_cur_libpath = m_pt.get<string>(sSectionNum + "." + LIBPATH_PROPERTY_NAME);
+      m_cur_section = &m_pt.get_child(sSectionNum);
+      load_cur_section();
+    }
+  }
+
+  void load_cur_section()
+  {
+    monitor_printf(default_mon, "loading lib conf for %s\n", m_cur_libpath.c_str());
+    // traverse the section
+    BOOST_FOREACH(boost::property_tree::ptree::value_type &v, *m_cur_section)
+    {
+      if(!v.first.compare(LIBPATH_PROPERTY_NAME))
+      {
+        continue;
+      }
+      // insert function
+      target_ulong addr = m_cur_section->get<target_ulong>(v.first);
+      funcmap_insert_function(m_cur_libpath.c_str(), v.first.c_str(), addr);
+    }
+  }
+
+
+  boost::property_tree::ptree m_pt;
+  string m_cur_libpath;
+  boost::property_tree::ptree *m_cur_section;
+public:
+  static const string LIBPATH_PROPERTY_NAME;
+};
+
+const string LibraryLoader::LIBPATH_PROPERTY_NAME = "decaf_conf_libpath";
+
+void load_library_info(const char *strName)
+{
+  LibraryLoader loader(strName);
+}

@@ -36,7 +36,7 @@ http://code.google.com/p/decaf-platform/
 #include "targphys.h"
 #include "compiler.h"
 #include "monitor.h"
-#include "shared/disasm.h"
+// AWH #include "shared/disasm.h"
 #include "shared/DECAF_callback.h"
 
 #define MAX_REGS (CPU_NUM_REGS + 8) //we assume up to 8 temporary registers
@@ -209,11 +209,11 @@ extern void DECAF_register_insn_cb_range(uint32_t start_opcode, uint32_t end_opc
 extern int DECAF_get_page_access(CPUState* env, gva_t addr);
 
 /// Check if the current execution of guest system is in kernel mode (i.e., ring-0)
-static inline int DECAF_is_in_kernel(void)
+static inline int DECAF_is_in_kernel(CPUState *_env)
 {
-  return ((cpu_single_env->hflags & HF_CPL_MASK) == 0);
+  return ((_env->hflags & HF_CPL_MASK) == 0);
 }
-
+#if 0 // AWH
 /// \brief Read from a register.
 ///
 /// Note that reg_id is register ID, which is different from register index.
@@ -359,7 +359,7 @@ static inline void DECAF_write_register(int reg_id, void *buf)
      	assert(0);
   }
 }
-
+#endif // AWH
 /* @} */ //end of group
 
 static inline gva_t DECAF_getPC(CPUState* env)
@@ -376,9 +376,6 @@ static inline gva_t DECAF_getESP(CPUState* env)
 {
   return (env->regs[R_ESP]);
 }
-
-
-gpa_t DECAF_get_phys_addr_with_pgd(CPUState* env, gpa_t pgd, gva_t addr);
 
 #ifdef __cplusplus
 }

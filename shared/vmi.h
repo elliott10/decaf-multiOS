@@ -84,7 +84,7 @@ process * VMI_find_process_by_pid(uint32_t pid);
 
 process * VMI_find_process_by_pgd(uint32_t pgd);
 
-process* VMI_find_process_by_name(char *name);
+process* VMI_find_process_by_name(const char *name);
 
 // add one module
 int VMI_add_module(module *mod, const char *key);

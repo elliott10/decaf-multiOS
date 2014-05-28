@@ -36,7 +36,7 @@ http://code.google.com/p/decaf-platform/
 #include "targphys.h"
 #include "compiler.h"
 #include "monitor.h"
-#include "shared/disasm.h"
+// #include "shared/disasm.h"
 #include "shared/DECAF_callback.h"
 
 #define MAX_REGS (CPU_NUM_REGS + 8) //we assume up to 8 temporary registers
@@ -46,9 +46,9 @@ extern "C" {
 #endif // __cplusplus
 
 /// Check if the current execution of guest system is in kernel mode (i.e., ring-0)
-static inline int DECAF_is_in_kernel(void)
+static inline int DECAF_is_in_kernel(CPUState *env)
 {
-  return ((cpu_single_env->hflags & MIPS_HFLAG_MODE) == MIPS_HFLAG_KM);
+  return ((env->hflags & MIPS_HFLAG_MODE) == MIPS_HFLAG_KM);
 }
 
 
@@ -57,20 +57,22 @@ static inline gva_t DECAF_getPC(CPUState* env)
   return (env->active_tc.PC);
 }
 
+gpa_t DECAF_getPGD(CPUState* env); 
+
 //Based this off of op_helper.c in r4k_fill_tlb()
-static inline gpa_t DECAF_getPGD(CPUState* env)
-{
-  return (env->CP0_EntryHi);
-}
+// static inline gpa_t DECAF_getPGD(CPUState* env)
+// {
+//   return (env->CP0_EntryHi);
+// }
 
 static inline gva_t DECAF_getESP(CPUState* env)
 {
   /* AWH - General-purpose register 29 (of 32) is the stack pointer */
-  return (env->active_tc.gpr[28]);
+  return (env->active_tc.gpr[29]);
 }
 
-
-gpa_t DECAF_get_phys_addr_with_pgd(CPUState* env, gpa_t pgd, gva_t addr);
+/* AWH - In shared/DECAF_main.h */
+//gpa_t DECAF_get_phys_addr_with_pgd(CPUState* env, gpa_t pgd, gva_t addr);
 
 #ifdef __cplusplus
 }

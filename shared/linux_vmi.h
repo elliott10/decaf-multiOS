@@ -38,6 +38,7 @@ extern "C" {
 
 int find_linux(CPUState *env, uintptr_t insn_handle);
 void linux_vmi_init();
+gpa_t mips_get_cur_pgd(CPUState *env);
 
 #ifdef __cplusplus
 };

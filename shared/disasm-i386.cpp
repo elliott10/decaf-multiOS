@@ -17,7 +17,7 @@ http://code.google.com/p/decaf-platform/
 /*                Recursive i386 Disassembler Opcodes                         */
 /******************************************************************************/
 
-#include "disasm.h"
+// #include "disasm.h"
 
 // AWH - Moved these here from disasm.h because of a conflict with target-i386/cpu.h
 #define ST OP_ST, 0

@@ -161,16 +161,16 @@ next:
 }
 
 
-static inline int get_IMAGE_NT_HEADERS(uint32_t cr3, uint32_t base, IMAGE_NT_HEADERS *nth)
+static inline int get_IMAGE_NT_HEADERS(uint32_t cr3, uint32_t base, IMAGE_NT_HEADERS *nth, CPUState *_env)
 {
 	IMAGE_DOS_HEADER DosHeader;
-	DECAF_read_mem(cpu_single_env, base, sizeof(IMAGE_DOS_HEADER), &DosHeader);
+	DECAF_read_mem(_env, base, sizeof(IMAGE_DOS_HEADER), &DosHeader);
 
 	if (DosHeader.e_magic != (0x5a4d)) {
 		return -1;
 	}
 
-	if(DECAF_read_mem(cpu_single_env, base + DosHeader.e_lfanew,
+	if(DECAF_read_mem(_env, base + DosHeader.e_lfanew,
 			sizeof(IMAGE_NT_HEADERS), nth) < 0) {
 		//monitor_printf(default_mon, "Reading NTHeader failed. :'(\n");
 		//monitor_printf(default_mon, "%s, 0x%08x, %d\n", fullname, base, DosHeader->e_lfanew);
@@ -183,13 +183,13 @@ static inline int get_IMAGE_NT_HEADERS(uint32_t cr3, uint32_t base, IMAGE_NT_HEA
 
 //FIXME: this function may potentially overflow "buf" --Heng
 static inline int readustr_with_cr3(uint32_t addr, uint32_t cr3, void *buf,
-		CPUState *env) {
+		CPUState *_env) {
 	uint32_t unicode_data[2];
 	int i, j, unicode_len = 0;
 	uint8_t unicode_str[MAX_UNICODE_LENGTH] = { '\0' };
 	char *store = (char *) buf;
 
-	if (DECAF_read_mem(env, addr, sizeof(unicode_data), unicode_data) < 0) {
+	if (DECAF_read_mem(_env, addr, sizeof(unicode_data), unicode_data) < 0) {
 		store[0] = '\0';
 		goto done;
 	}
@@ -198,7 +198,7 @@ static inline int readustr_with_cr3(uint32_t addr, uint32_t cr3, void *buf,
 	if (unicode_len > MAX_UNICODE_LENGTH)
 		unicode_len = MAX_UNICODE_LENGTH;
 
-	if (DECAF_read_mem(env, unicode_data[1], unicode_len, (void *) unicode_str) < 0) {
+	if (DECAF_read_mem(_env, unicode_data[1], unicode_len, (void *) unicode_str) < 0) {
 		store[0] = '\0';
 		goto done;
 	}
@@ -262,7 +262,7 @@ static void update_kernel_modules(CPUState *env, target_ulong vaddr) {
 		//uniquely identify a module.
 		//We do not use full module name, because the same module can be referenced through
 		//different full paths: e.g., c://windows/system32 and /systemroot/windows/system32.
-		if(get_IMAGE_NT_HEADERS(env->cr[3], base, &nth) < 0)
+		if(get_IMAGE_NT_HEADERS(env->cr[3], base, &nth, env) < 0)
 			goto next;
 
 		snprintf(key, sizeof(key)-1, "%s:%08x", base_name, nth.OptionalHeader.CheckSum);
@@ -328,7 +328,7 @@ static void update_loaded_user_mods_with_peb(CPUState* env, process *proc,
 			//uniquely identify a module.
 			//We do not use full module name, because the same module can be referenced through
 			//different full paths: e.g., c://windows/system32 and /systemroot/windows/system32.
-			if(get_IMAGE_NT_HEADERS(cr3, base, &nth) < 0)
+			if(get_IMAGE_NT_HEADERS(cr3, base, &nth, env) < 0)
 				goto next;
 
 			snprintf(key, sizeof(key)-1, "%s:%08x", name, nth.OptionalHeader.CheckSum);
@@ -355,7 +355,7 @@ next:
 
 }
 
-static void extract_export_table(IMAGE_NT_HEADERS *nth, uint32_t cr3, uint32_t base, module *mod)
+static void extract_export_table(IMAGE_NT_HEADERS *nth, uint32_t cr3, uint32_t base, module *mod, CPUState *_env)
 {
 	IMAGE_EXPORT_DIRECTORY ied;
 	DWORD edt_va, edt_size;
@@ -363,11 +363,11 @@ static void extract_export_table(IMAGE_NT_HEADERS *nth, uint32_t cr3, uint32_t b
 	WORD *ordinals=NULL;
 	char name[64];
 	DWORD i;
-	CPUState *env = cpu_single_env;
+	//CPUState *env = cpu_single_env;
 	edt_va = nth->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
 	edt_size = nth->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].Size;
 
-	if(DECAF_read_mem(env, base + edt_va, sizeof(ied), &ied) < 0) {
+	if(DECAF_read_mem(_env, base + edt_va, sizeof(ied), &ied) < 0) {
 		//monitor_printf(default_mon, "Unable to read exp dir from image: mod=%s:%d base=%08x, va=%08x.\n", mod->name, ver, base, edt_va);
 		//DECAF_stop_vm();
 		goto done;
@@ -384,17 +384,17 @@ static void extract_export_table(IMAGE_NT_HEADERS *nth, uint32_t cr3, uint32_t b
 	if(!func_addrs || !name_addrs || !ordinals)
 		goto done;
 
-	if(DECAF_read_mem(env, base + ied.AddressOfFunctions,
+	if(DECAF_read_mem(_env, base + ied.AddressOfFunctions,
 			sizeof(DWORD) * ied.NumberOfFunctions, func_addrs) < 0) {
 		goto done;
 	}
 
-	if(DECAF_read_mem(env, base + ied.AddressOfNames,
+	if(DECAF_read_mem(_env, base + ied.AddressOfNames,
 			sizeof(DWORD) * ied.NumberOfNames, name_addrs) < 0) {
 		goto done;
 	}
 
-	if(DECAF_read_mem(env, base + ied.AddressOfNameOrdinals,
+	if(DECAF_read_mem(_env, base + ied.AddressOfNameOrdinals,
 			sizeof(WORD) * ied.NumberOfNames, ordinals) < 0) {
 		goto done;
 	}
@@ -404,7 +404,7 @@ static void extract_export_table(IMAGE_NT_HEADERS *nth, uint32_t cr3, uint32_t b
 		if(index >= ied.NumberOfFunctions)
 			continue;
 
-		DECAF_read_mem(env, base + name_addrs[i], sizeof(name)-1, name);
+		DECAF_read_mem(_env, base + name_addrs[i], sizeof(name)-1, name);
 		name[127] = 0;
 		funcmap_insert_function(mod->name, name, func_addrs[index]);
 	}
@@ -425,72 +425,72 @@ done:
 
 //Extract info in PE header and export table from a PE module
 //If everything is done successfully, mod->symbols_extracted will be set true
-static void extract_PE_info(uint32_t cr3, uint32_t base, module *mod)
+static void extract_PE_info(uint32_t cr3, uint32_t base, module *mod, CPUState *_env)
 {
 	IMAGE_NT_HEADERS nth;
 
-	if (get_IMAGE_NT_HEADERS(cr3, base, &nth) < 0)
+	if (get_IMAGE_NT_HEADERS(cr3, base, &nth, _env) < 0)
 		return;
 
 	mod->checksum = nth.OptionalHeader.CheckSum;
 	mod->codesize = nth.OptionalHeader.SizeOfCode;
 	mod->major = nth.OptionalHeader.MajorImageVersion;
 	mod->minor = nth.OptionalHeader.MinorImageVersion;
-	extract_export_table(&nth, cr3, base, mod);
+	extract_export_table(&nth, cr3, base, mod, _env);
 }
 
 
-static void retrieve_missing_symbols(process *proc)
+static void retrieve_missing_symbols(process *proc, CPUState *_env)
 {
 	unordered_map < uint32_t,module * >::iterator iter = proc->module_list.begin();
 
 	for(; iter!=proc->module_list.end(); iter++) {
 		module *cur_mod = iter->second;
 		if(!cur_mod->symbols_extracted)
-			extract_PE_info(proc->cr3, iter->first, cur_mod);
+			extract_PE_info(proc->cr3, iter->first, cur_mod, _env);
 	}
 }
 
-static inline void get_new_modules(CPUState* env, process * proc, target_ulong vaddr)
+static inline void get_new_modules(CPUState* _env, process * proc, target_ulong vaddr)
 {
 	uint32_t base = 0, self = 0, pid = 0;
 	if (proc == kernel_proc) {
-		update_kernel_modules(env, vaddr);
+		update_kernel_modules(_env, vaddr);
 	} else {
-		base = env->segs[R_FS].base;
-		DECAF_read_mem(env, base + 0x18, 4, &self);
+		base = _env->segs[R_FS].base;
+		DECAF_read_mem(_env, base + 0x18, 4, &self);
 
 		if (base != 0 && base == self) {
 			//Why don't you use the offset table instead of these hard-coded offsets?
 			uint32_t pid_addr = base + 0x20;
-			DECAF_read_mem(env, pid_addr, 4, &pid);
+			DECAF_read_mem(_env, pid_addr, 4, &pid);
 			uint32_t peb_addr = base + 0x30;
 			uint32_t peb;
-			DECAF_read_mem(env, peb_addr, 4, &peb);
-			update_loaded_user_mods_with_peb(env, proc, peb, vaddr);
+			DECAF_read_mem(_env, peb_addr, 4, &peb);
+			update_loaded_user_mods_with_peb(_env, proc, peb, vaddr);
 		}
 	}
 }
 
 static void tlb_call_back(DECAF_Callback_Params *temp)
 {
-	CPUState *env = temp->tx.env;
+	CPUState *ourenv = temp->tx.env;
 	target_ulong vaddr = temp->tx.vaddr;
-	uint32_t cr3 = env->cr[3];
+	uint32_t cr3 = ourenv->cr[3];
 	process *proc;
 
-	if(DECAF_is_in_kernel()) {
+	if(DECAF_is_in_kernel(ourenv)) {
 		proc = kernel_proc;
 		kernel_proc->cr3 = cr3;
 	} else {
 		proc = VMI_find_process_by_pgd(cr3);
 		if (proc == NULL)
-			proc = find_new_process(env, cr3);
+			proc = find_new_process(ourenv, cr3);
 	}
 
 	if (proc ) {
 		if (!is_page_resolved(proc, vaddr)) {
-			get_new_modules(env, proc, vaddr);
+			get_new_modules(ourenv, proc, vaddr);
 
 			if (!is_page_resolved(proc, vaddr)) {
 				int attempts = unresolved_attempt(proc, vaddr);
@@ -499,7 +499,7 @@ static void tlb_call_back(DECAF_Callback_Params *temp)
 			}
 
 		}
-		retrieve_missing_symbols(proc);
+		retrieve_missing_symbols(proc, ourenv);
 	}
 }
 
@@ -568,13 +568,13 @@ static uint32_t get_ntoskrnl_internal(uint32_t curr_page, CPUState *env) {
 	return 0;
 }
 
-uint32_t get_ntoskrnl(CPUState *env) {
+uint32_t get_ntoskrnl(CPUState *_env) {
 	uint32_t ntoskrnl_base = 0;
-	ntoskrnl_base = get_ntoskrnl_internal(env->sysenter_eip & 0xfffff000, env);
+	ntoskrnl_base = get_ntoskrnl_internal(_env->sysenter_eip & 0xfffff000, _env);
 	if (ntoskrnl_base)
 		goto found;
 
-	ntoskrnl_base = get_ntoskrnl_internal(env->eip & 0xfffff000, env);
+	ntoskrnl_base = get_ntoskrnl_internal(_env->eip & 0xfffff000, _env);
 	if (ntoskrnl_base)
 		goto found;
 	return 0;
@@ -584,18 +584,18 @@ found:
 }
 
 /*FIXME: Supports only 32bit guest. */
-static uint32_t probe_windows(CPUState *env)
+static uint32_t probe_windows(CPUState *_env)
 {
 	uint32_t base;
 
-	if (env->eip > 0x80000000 && env->segs[R_FS].base > 0x80000000) {
+	if (_env->eip > 0x80000000 && _env->segs[R_FS].base > 0x80000000) {
 		gkpcr = get_kpcr();
 		if (gkpcr != 0) {
 			//DECAF_unregister_callback(DECAF_INSN_END_CB, insn_handle);
 			rtflag = 1;
 
-			get_os_version(env);
-			base = get_ntoskrnl(env);
+			get_os_version(_env);
+			base = get_ntoskrnl(_env);
 			monitor_printf(default_mon,
 					"The base address of ntoskrnl.exe is %08x\n", base);
 			if (!base) {
@@ -613,30 +613,30 @@ static uint32_t probe_windows(CPUState *env)
 	return 0;
 }
 
-int find_win7sp0(CPUState *env, uintptr_t insn_handle) {
-	probe_windows(env);
+int find_win7sp0(CPUState *_env, uintptr_t insn_handle) {
+	probe_windows(_env);
 	if (GuestOS_index == 2 && rtflag == 1)
 		return 1;
 	else
 		return 0;
 }
-int find_win7sp1(CPUState *env, uintptr_t insn_handle) {
-	probe_windows(env);
+int find_win7sp1(CPUState *_env, uintptr_t insn_handle) {
+	probe_windows(_env);
 	if (GuestOS_index == 2 && rtflag == 1)
 		return 1;
 	else
 		return 0;
 }
-int find_winxpsp2(CPUState *env, uintptr_t insn_handle) {
+int find_winxpsp2(CPUState *_env, uintptr_t insn_handle) {
 
-	probe_windows(env);
+	probe_windows(_env);
 	if (GuestOS_index == 0 && rtflag == 1)
 		return 1;
 	else
 		return 0;
 }
-int find_winxpsp3(CPUState *env, uintptr_t insn_handle) {
-	probe_windows(env);
+int find_winxpsp3(CPUState *_env, uintptr_t insn_handle) {
+	probe_windows(_env);
 	if (GuestOS_index == 1 && rtflag == 1)
 		return 1;
 	else
@@ -647,7 +647,8 @@ int find_winxpsp3(CPUState *env, uintptr_t insn_handle) {
 
 void check_procexit(void *)
 {
-	CPUState *env = cpu_single_env ? cpu_single_env : first_cpu;
+	/* AWH - cpu_single_env is invalid outside of the main exec thread */
+	CPUState *env = /* AWH cpu_single_env ? cpu_single_env :*/ first_cpu;
 	qemu_mod_timer(recon_timer,
 			qemu_get_clock_ns(vm_clock) + get_ticks_per_sec() * 10);
 	//monitor_printf(default_mon, "Checking for proc exits...\n");

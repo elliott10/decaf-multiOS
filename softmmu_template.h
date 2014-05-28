@@ -134,7 +134,7 @@ DATA_TYPE REGPARM glue(glue(__ld, SUFFIX), MMUSUFFIX)(target_ulong addr,
             //Hu-Mem read callback
 #ifndef SOFTMMU_CODE_ACCESS
          	if(DECAF_is_callback_needed(DECAF_MEM_READ_CB))// host vitual addr+addend
-         		helper_DECAF_invoke_mem_read_callback(addr,qemu_ram_addr_from_host_nofail(addr+addend),DATA_SIZE);
+         		helper_DECAF_invoke_mem_read_callback(addr,qemu_ram_addr_from_host_nofail((void *)(addr+addend)),DATA_SIZE);
 #endif
         	//end
 
@@ -197,7 +197,7 @@ static DATA_TYPE glue(glue(slow_ld, SUFFIX), MMUSUFFIX)(target_ulong addr,
 #ifndef SOFTMMU_CODE_ACCESS
 
          	if(DECAF_is_callback_needed(DECAF_MEM_READ_CB))
-         	    helper_DECAF_invoke_mem_read_callback(addr,qemu_ram_addr_from_host_nofail(addr+addend),DATA_SIZE);
+         	    helper_DECAF_invoke_mem_read_callback(addr,qemu_ram_addr_from_host_nofail((void *)(addr+addend)),DATA_SIZE);
 #endif
      	    //end
 
@@ -328,7 +328,7 @@ void REGPARM glue(glue(__st, SUFFIX), MMUSUFFIX)(target_ulong addr,
             //Hu-Mem write callback
 #ifndef SOFTMMU_CODE_ACCESS
          	if(DECAF_is_callback_needed(DECAF_MEM_WRITE_CB))
-         	    helper_DECAF_invoke_mem_write_callback(addr,qemu_ram_addr_from_host_nofail(addr+addend),DATA_SIZE);
+         	    helper_DECAF_invoke_mem_write_callback(addr,qemu_ram_addr_from_host_nofail((void *)(addr+addend)),DATA_SIZE);
 #endif
         	//end
         }
@@ -384,9 +384,9 @@ static void glue(glue(slow_st, SUFFIX), MMUSUFFIX)(target_ulong addr,
             addend = env->tlb_table[mmu_idx][index].addend;
             glue(glue(st, SUFFIX), _raw)((uint8_t *)(long)(addr+addend), val);
             //Hu-Mem read callback
-#if SUFFIX != _cmmu
+#if defined(ADD_MEM_CB)
             if(DECAF_is_callback_needed(DECAF_MEM_WRITE_CB))
-         	    helper_DECAF_invoke_mem_write_callback(addr,qemu_ram_addr_from_host_nofail(addr+addend),DATA_SIZE);
+         	    helper_DECAF_invoke_mem_write_callback(addr,qemu_ram_addr_from_host_nofail((void *)(addr+addend)),DATA_SIZE);
 #endif
          	//end
 

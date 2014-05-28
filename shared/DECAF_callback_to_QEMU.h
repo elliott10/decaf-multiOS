@@ -49,8 +49,11 @@ void helper_DECAF_invoke_mem_write_callback(gva_t virt_addr,gpa_t phy_addr,DATA_
 void helper_DECAF_invoke_keystroke_callback(int keycode,uint32_t *taint_mark);
 void helper_DECAF_invoke_read_taint_mem(gva_t vaddr,gpa_t paddr,uint32_t size,uint8_t *taint_info);
 void helper_DECAF_invoke_write_taint_mem(gva_t vaddr,gpa_t paddr,uint32_t size,uint8_t *taint_info);
-
-
+void helper_DECAF_invoke_log_pointer_read(gva_t virt_addr,gva_t taint_info);
+void helper_DECAF_invoke_log_pointer_write(gva_t virt_addr, gva_t taint_info);
+#ifdef CONFIG_TCG_LLVM
+void helper_DECAF_invoke_block_trans_callback(const struct TranslationBlock *tb, const struct TCGContext *tcg_ctx);
+#endif /* CONFIG_TCG_LLVM */
 //The following prototypes are not needed since they are defined in
 // helper.h
 //void helper_DECAF_invoke_block_begin_callback(CPUState* env, TranslationBlock* tb);

@@ -55,7 +55,7 @@ extern int VMI_find_cr3_by_pid_c(uint32_t pid);
 
 extern int VMI_find_pid_by_cr3_c(uint32_t cr3);
 
-extern int VMI_find_pid_by_name_c(char* proc_name);
+extern int VMI_find_pid_by_name_c(const char* proc_name);
 
 /// @ingroup semantics
 /// find process given a memory space id

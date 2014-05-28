@@ -34,6 +34,33 @@
 #include "helper.h"
 #define GEN_HELPER 1
 #include "helper.h"
+#include "shared/DECAF_callback_to_QEMU.h"
+
+#ifdef CONFIG_TCG_TAINT
+#include "shared/tainting/taint_memory.h"
+#include "shared/tainting/tcg_taint.h"
+#endif /* CONFIG_TCG_TAINT */
+
+#ifdef CONFIG_TCG_IR_LOG
+inline void log_tcg_ir(TranslationBlock *tb)
+{
+  int i;
+
+  /* AWH - Store the IRs for logging to disk later by plugin, if needed. */
+  tb->DECAF_num_opc = (gen_opc_ptr - gen_opc_buf);
+  tb->DECAF_num_opparam = (gen_opparam_ptr - gen_opparam_buf);
+  memcpy(tb->DECAF_gen_opc_buf, gen_opc_buf, tb->DECAF_num_opc * sizeof(uint16_t));
+  memcpy(tb->DECAF_gen_opparam_buf, gen_opparam_buf, tb->DECAF_num_opparam * sizeof(TCGArg));
+
+  /* Store information about the temps as to whether they are temp or local */
+  tb->DECAF_num_temps = tcg_ctx.nb_temps;
+  for (i=tcg_ctx.nb_globals; i < (tcg_ctx.nb_globals + tcg_ctx.nb_temps); i++)
+  {
+    if (tcg_ctx.temps[i].temp_local)
+      tb->DECAF_temp_type[i>>3] |= (1 << (i % 8));
+  }
+}
+#endif /* CONFIG_TCG_IR_LOG */
 
 //#define MIPS_DEBUG_DISAS
 //#define MIPS_DEBUG_SIGN_EXTENSIONS
@@ -485,8 +512,19 @@ static TCGv cpu_HI[MIPS_DSP_ACC], cpu_LO[MIPS_DSP_ACC], cpu_ACX[MIPS_DSP_ACC];
 static TCGv cpu_dspctrl, btarget, bcond;
 static TCGv_i32 hflags;
 static TCGv_i32 fpu_fcr0, fpu_fcr31;
-
+#ifdef CONFIG_TCG_TAINT
+/* This needs to be accessable to the taint generation function so that
+   this metadata can be updated as more taint IRs are added to the TB. */
+uint32_t gen_opc_hflags[OPC_BUF_SIZE];
+static TCGv taint_cpu_gpr[32], taint_cpu_PC;
+/* AWH - See if we need these later
+static TCGv taint_cpu_HI[MIPS_DSP_ACC], taint_cpu_LO[MIPS_DSP_ACC], taint_cpu_ACX[MIPS_DSP_ACC];
+static TCGv taint_cpu_dspctrl, taint_btarget, taint_bcond;
+static TCGv_i32 taint_hflags;
+static TCGv_i32 taint_fpu_fcr0, taint_fpu_fcr31; */
+#else
 static uint32_t gen_opc_hflags[OPC_BUF_SIZE];
+#endif /* CONFIG_TCG_TAINT */
 
 #include "gen-icount.h"
 
@@ -513,6 +551,30 @@ static uint32_t gen_opc_hflags[OPC_BUF_SIZE];
     gen_helper_##name(arg1, arg2, arg3, helper_tmp);              \
     tcg_temp_free_i32(helper_tmp);                                \
     } while(0)
+
+#if 1 /* AWH - For callbacks */
+#define INSERT_INSN_END_CB() if(DECAF_is_callback_needed(DECAF_INSN_END_CB)) { gen_helper_DECAF_invoke_insn_end_callback(cpu_env); }
+
+//LOK: I need a temporary global to hold the jump target for basic block end
+// This is used for checking to see if the block end callback is needed
+// Note that this is only known for direct jumps - for indirect jumps
+// we use the 0xFFFFFFFF (-1) default value
+//NOTE: There is an inherent assumption that gen_eob is called immediately
+// after gen_jump_im since I update next_pc in gen_jmp_im and then use it
+// in gen_eob.
+//next_pc is initialized to the default -1 value at the beginning of disas_insn
+// an alternative is to set it up in gen_intermediate_code_internal (which calls
+// disas_insn and is at the basic block level.)
+//I don't think we need to reset it to -1 after disas_insn, but it might be
+// safer to do so
+static target_ulong next_pc;
+
+//LOK: Similarly, we also need one to keep track of the current pc just because
+// gen_eob is called after gen_jmp_im - which updates the pc. So for block ends
+// that are generated at gen_eob, it is impossible to know where the branch
+// source was.
+static target_ulong cur_pc;
+#endif /* AWH */
 
 typedef struct DisasContext {
     struct TranslationBlock *tb;
@@ -554,6 +616,37 @@ static const char *fregnames[] =
       "f8",  "f9",  "f10", "f11", "f12", "f13", "f14", "f15",
       "f16", "f17", "f18", "f19", "f20", "f21", "f22", "f23",
       "f24", "f25", "f26", "f27", "f28", "f29", "f30", "f31", };
+#ifdef CONFIG_TCG_TAINT
+static const char *taint_regnames[] =
+    { "taint_r0", "taint_at", "taint_v0", "taint_v1", 
+      "taint_a0", "taint_a1", "taint_a2", "taint_a3",
+      "taint_t0", "taint_t1", "taint_t2", "taint_t3", 
+      "taint_t4", "taint_t5", "taint_t6", "taint_t7",
+      "taint_s0", "taint_s1", "taint_s2", "taint_s3", 
+      "taint_s4", "taint_s5", "taint_s6", "taint_s7",
+      "taint_t8", "taint_t9", "taint_k0", "taint_k1",
+      "taint_gp", "taint_sp", "taint_s8", "taint_ra", };
+/* AWH - See if we need these later
+static const char *taint_regnames_HI[] =
+    { "taint_HI0", "taint_HI1", "taint_HI2", "taint_HI3", };
+
+static const char *taint_regnames_LO[] =
+    { "taint_LO0", "taint_LO1", "taint_LO2", "taint_LO3", };
+
+static const char *taint_regnames_ACX[] =
+    { "taint_ACX0", "taint_ACX1", "taint_ACX2", "taint_ACX3", };
+
+static const char *taint_fregnames[] =
+    { "taint_f0",  "taint_f1",  "taint_f2",  "taint_f3",
+      "taint_f4",  "taint_f5",  "taint_f6",  "taint_f7",
+      "taint_f8",  "taint_f9",  "taint_f10", "taint_f11",
+      "taint_f12", "taint_f13", "taint_f14", "taint_f15",
+      "taint_f16", "taint_f17", "taint_f18", "taint_f19",
+      "taint_f20", "taint_f21", "taint_f22", "taint_f23",
+      "taint_f24", "taint_f25", "taint_f26", "taint_f27",
+      "taint_f28", "taint_f29", "taint_f30", "taint_f31", };
+*/
+#endif /* CONFIG_TCG_TAINT */
 
 #ifdef MIPS_DEBUG_DISAS
 #define MIPS_DEBUG(fmt, ...)                         \
@@ -2683,6 +2776,17 @@ static inline void gen_goto_tb(DisasContext *ctx, int n, target_ulong dest)
     tb = ctx->tb;
     if ((tb->pc & TARGET_PAGE_MASK) == (dest & TARGET_PAGE_MASK) &&
         likely(!ctx->singlestep_enabled)) {
+#if 1 /* AWH - callback */
+        if(DECAF_is_BlockEndCallback_needed(tb->pc, dest))
+        {
+          TCGv_ptr tmpTb = tcg_const_ptr((tcg_target_ulong)tb);
+          TCGv tmpFrom = tcg_temp_new();
+          tcg_gen_movi_tl(tmpFrom, cur_pc);
+          gen_helper_DECAF_invoke_block_end_callback(cpu_env, tmpTb, tmpFrom);
+          tcg_temp_free(tmpFrom);
+          tcg_temp_free_ptr(tmpTb);
+        }
+#endif /* AWH */
         tcg_gen_goto_tb(n);
         gen_save_pc(dest);
         tcg_gen_exit_tb((tcg_target_long)tb + n);
@@ -12386,6 +12490,9 @@ gen_intermediate_code_internal (CPUState *env, TranslationBlock *tb,
     int j, lj = -1;
     int num_insns;
     int max_insns;
+#ifdef CONFIG_TCG_TAINT
+    int not_tainted = 1;
+#endif /* CONFIG_TCG_TAINT */
     int insn_bytes;
     int is_branch;
 
@@ -12413,12 +12520,47 @@ gen_intermediate_code_internal (CPUState *env, TranslationBlock *tb,
         max_insns = CF_COUNT_MASK;
     LOG_DISAS("\ntb %p idx %d hflags %04x\n", tb, ctx.mem_idx, ctx.hflags);
     gen_icount_start();
+#if 1 /* AWH - based off of the I386 target approach */
+    if(DECAF_is_BlockBeginCallback_needed(tb->pc))
+    {
+      //LOK: While we can define a new TCG operation for tcg_gen_movi_ptr in tcg/tcg-op.h we will just use tcg_const_ptr macro instead
+      //tcg_target_ulong is defined in tcg.h and
+      // according to the definition, it is defined as 64 bits if UINTPTR_MAX is UINT64_MAX
+      // which implies that the TCG target is the HOST
+      TCGv_ptr tmpTb = tcg_const_ptr((tcg_target_ulong)tb);
+      gen_helper_DECAF_invoke_block_begin_callback(cpu_env, tmpTb);
+      tcg_temp_free_ptr(tmpTb);
+      //LOK: I wonder if I really have to call tcg_temp_free_ptr
+      // since all of the other calls to tcg_const... don't have it
+    }
+#else
+    if(DECAF_is_callback_needed(DECAF_BLOCK_BEGIN_CB))
+        gen_helper_DECAF_invoke_callback(tcg_const_i32(DECAF_BLOCK_BEGIN_CB));
+#endif /* AWH */
+#ifdef CONFIG_TCG_TAINT
+    if (taint_tracking_enabled) {
+        gen_old_opc_ptr = gen_opc_ptr;
+        gen_old_opparam_ptr = gen_opparam_ptr;
+        memset(gen_opc_instr_start, 0, sizeof(uint8_t) * (OPC_BUF_SIZE));
+    }
+#endif /* CONFIG_TCG_TAINT */
     while (ctx.bstate == BS_NONE) {
+        // update pc for instruction begin callback
+        gen_save_pc(ctx.pc); // rundong
         if (unlikely(!QTAILQ_EMPTY(&env->breakpoints))) {
             QTAILQ_FOREACH(bp, &env->breakpoints, entry) {
                 if (bp->pc == ctx.pc) {
                     save_cpu_state(&ctx, 1);
                     ctx.bstate = BS_BRANCH;
+#ifdef CONFIG_TCG_IR_LOG
+                    log_tcg_ir(tb);
+#endif /* CONFIG_TCG_IR_LOG */
+#ifdef CONFIG_TCG_TAINT
+                    if (taint_tracking_enabled) {
+                        lj = optimize_taint(search_pc);
+                        not_tainted = 0;
+                    }
+#endif /* CONFIG_TCG_TAINT */
                     gen_helper_0i(raise_exception, EXCP_DEBUG);
                     /* Include the breakpoint location or the tb won't
                      * be flushed when it must be.  */
@@ -12442,7 +12584,16 @@ gen_intermediate_code_internal (CPUState *env, TranslationBlock *tb,
         }
         if (num_insns + 1 == max_insns && (tb->cflags & CF_LAST_IO))
             gen_io_start();
+#if 1 /* AWH */
+	if (DECAF_is_callback_needed(DECAF_INSN_BEGIN_CB))
+		gen_helper_DECAF_invoke_insn_begin_callback(cpu_env);
 
+        //if (unlikely(qemu_loglevel_mask(CPU_LOG_TB_OP))) {
+        //    tcg_gen_debug_insn_start(ctx.pc);
+        //}
+        next_pc = (-1); // Needed?
+        cur_pc = pc_start; // Needed?
+#endif /* AWH */
         is_branch = 0;
         if (!(ctx.hflags & MIPS_HFLAG_M16)) {
             ctx.opcode = ldl_code(ctx.pc);
@@ -12459,6 +12610,9 @@ gen_intermediate_code_internal (CPUState *env, TranslationBlock *tb,
             ctx.bstate = BS_STOP;
             break;
         }
+#if 1 /* AWH */
+        INSERT_INSN_END_CB()
+#endif /* AWH */
         if (!is_branch) {
             handle_delay_slot(env, &ctx, insn_bytes);
         }
@@ -12485,6 +12639,13 @@ gen_intermediate_code_internal (CPUState *env, TranslationBlock *tb,
         if (singlestep)
             break;
     }
+#ifdef CONFIG_TCG_IR_LOG
+    log_tcg_ir(tb);
+#endif /* CONFIG_TCG_IR_LOG */
+#ifdef CONFIG_TCG_TAINT
+    if (not_tainted && taint_tracking_enabled)
+        lj = optimize_taint(search_pc);
+#endif /* CONFIG_TCG_TAINT */
     if (tb->cflags & CF_LAST_IO)
         gen_io_end();
     if (env->singlestep_enabled && ctx.bstate != BS_BRANCH) {
@@ -12686,6 +12847,43 @@ static void mips_tcg_init(void)
     fpu_fcr31 = tcg_global_mem_new_i32(TCG_AREG0,
                                        offsetof(CPUState, active_fpu.fcr31),
                                        "fcr31");
+#ifdef CONFIG_TCG_TAINT
+    for (i = 1; i < 32; i++) {
+      taint_cpu_gpr[i] = tcg_global_mem_new(TCG_AREG0,
+        offsetof(CPUState, active_tc.taint_gpr[i]), taint_regnames[i]);
+      shadow_arg[(int)cpu_gpr[i]] = taint_cpu_gpr[i];
+    }
+    taint_cpu_PC = tcg_global_mem_new(TCG_AREG0,
+      offsetof(CPUState, active_tc.taint_PC), "taint_PC");
+    shadow_arg[(int)cpu_PC] = taint_cpu_PC;
+/* AWH - See if we need these later
+    for (i = 0; i < MIPS_DSP_ACC; i++) {
+      taint_cpu_HI[i] = tcg_global_mem_new(TCG_AREG0,
+        offsetof(CPUState, active_tc.taint_HI[i]), taint_regnames_HI[i]);
+      taint_cpu_LO[i] = tcg_global_mem_new(TCG_AREG0,
+        offsetof(CPUState, active_tc.taint_LO[i]), taint_regnames_LO[i]);
+      taint_cpu_ACX[i] = tcg_global_mem_new(TCG_AREG0,
+        offsetof(CPUState, active_tc.taint_ACX[i]), taint_regnames_ACX[i]);
+    }
+    taint_cpu_dspctrl = tcg_global_mem_new(TCG_AREG0,
+      offsetof(CPUState, active_tc.taint_DSPControl), "taint_DSPControl");
+    taint_bcond = tcg_global_mem_new(TCG_AREG0,
+      offsetof(CPUState, taint_bcond), "taint_bcond");
+    taint_btarget = tcg_global_mem_new(TCG_AREG0,
+      offsetof(CPUState, taint_btarget), "taint_btarget");
+    taint_hflags = tcg_global_mem_new_i32(TCG_AREG0,
+      offsetof(CPUState, taint_hflags), "taint_hflags");
+
+    taint_fpu_fcr0 = tcg_global_mem_new_i32(TCG_AREG0,
+      offsetof(CPUState, active_fpu.taint_fcr0), "taint_fcr0");
+    taint_fpu_fcr31 = tcg_global_mem_new_i32(TCG_AREG0,
+      offsetof(CPUState, active_fpu.taint_fcr31), "taint_fcr31");
+*/
+    tempidx = tcg_global_mem_new_i32(TCG_AREG0,
+      offsetof(CPUState, tempidx), "tempidx");
+    tempidx2 = tcg_global_mem_new_i32(TCG_AREG0,
+      offsetof(CPUState, tempidx), "tempidx2");
+#endif /* CONFIG_TCG_TAINT */
 
     /* register helpers */
 #define GEN_HELPER 2

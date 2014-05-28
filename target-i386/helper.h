@@ -1,7 +1,4 @@
 #include "def-helper.h"
-#ifdef CONFIG_TCG_TAINT
-#include "tainting/DECAF_taint_helper.h"
-#endif /* CONFIG_TCG_TAINT */
 DEF_HELPER_FLAGS_1(cc_compute_all, TCG_CALL_PURE, i32, int)
 DEF_HELPER_FLAGS_1(cc_compute_c, TCG_CALL_PURE, i32, int)
 
@@ -26,7 +23,7 @@ DEF_HELPER_1(DECAF_invoke_insn_end_callback, void, ptr)
 DEF_HELPER_0(DECAF_update_fpu, void);
 
 #ifdef CONFIG_TCG_TAINT
-DEF_HELPER_2(DECAF_invoke_eip_check_callback,void,i32,i32)
+DEF_HELPER_3(DECAF_invoke_eip_check_callback,void,tl,tl,tl)
 DEF_HELPER_0(DECAF_taint_patch,void)
 DEF_HELPER_0(DECAF_taint_cmpxchg, void)
 #endif /* CONFIG_TCG_TAINT */

@@ -5,7 +5,7 @@
 #include "taint_memory.h"
 #include "monitor.h" // For default_mon
 #include "DECAF_callback_common.h"
-
+#include "shared/DECAF_callback_to_QEMU.h"
 
 #ifdef CONFIG_TCG_TAINT
 
@@ -454,7 +454,7 @@ void REGPARM __taint_stq_raw(unsigned long addr, gva_t vaddr) {
 }
 
 
-uint32_t calc_tainted_bytes(){
+uint32_t calc_tainted_bytes(void){
 	uint32_t tainted_bytes, i;
 	uint32_t leaf_index;
 	uint32_t middle_index;
@@ -573,7 +573,7 @@ int do_tainted_bytes(Monitor *mon,const QDict *qdict,QObject **ret_data){
      tainted_bytes=calc_tainted_bytes();
      monitor_printf(default_mon,"Tainted memory: %d bytes\n",tainted_bytes);
   }
-
+  return 0;
 }
 int do_taint_mem_usage(Monitor *mon, const QDict *qdict, QObject **ret_data) {
   if (!taint_tracking_enabled)
@@ -591,7 +591,7 @@ int do_garbage_collect_taint(Monitor *mon, const QDict *qdict, QObject **ret_dat
     monitor_printf(default_mon, "Ignored, taint tracking is disabled\n");
   else
   {
-    int prior_middle, prior_leaf, present_middle, present_leaf;
+    int prior_middle, prior_leaf/*, present_middle, present_leaf*/;
     prior_middle = middle_nodes_in_use;
     prior_leaf = leaf_nodes_in_use;
 

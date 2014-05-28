@@ -16,12 +16,8 @@
 #include "config-target.h"
 
 #include "helper.h" // Taint helper functions, plus I386 IN/OUT helpers
-//#include "tcg_taint_branch.h"
 #include "DECAF_callback_common.h"
-//#define BLOCK_SKIP_GREATER_EQUAL 68
-//#define BLOCK_SKIP_LESS_EQUAL 66
-//#define ALLOW_BSLE 1
-//#define ALLOW_BSGE 1
+#include "DECAF_callback_to_QEMU.h"
 
 /* Target-specific metadata buffers are extern'd here so that the taint
    IR insertions can update them. */
@@ -50,19 +46,16 @@ typedef CPUMIPSState OurCPUState;
 #endif /* TARGET_I386/ARM */
 
 // AWH - In development
-//#define TCG_LOGGING_TAINT 1
 //#define USE_TCG_OPTIMIZATIONS 1
-//#define LOG_POINTER
 #define LOG_TAINTED_EIP
 // AWH - Change these to change taint/pointer rules
 #define TAINT_EXPENSIVE_ADDSUB 1
 #define TCG_BITWISE_TAINT 1
 //#define TAINT_NEW_POINTER 1
 
-#if defined(LOG_POINTER) || defined(LOG_TAINTED_EIP)
+#if defined(LOG_TAINTED_EIP)
 #define MAX_TAINT_LOG_TEMPS 10
 static TCGArg helper_arg_array[MAX_TAINT_LOG_TEMPS];
-#define MAX_TAINT_LOG_TEMPS 10
 static TCGv taint_log_temps[MAX_TAINT_LOG_TEMPS];
 static inline void set_con_i32(int index, TCGv arg)
 {
@@ -79,50 +72,6 @@ TCGv tempidx, tempidx2;
 
 // Extern in translate.c
 extern TCGv_ptr cpu_env;
-
-
-#ifdef TCG_LOGGING_TAINT
-#if 0 // AWH
-/* This holds out metadata for each opcode to tell whether to 
-  override the liveness optimizer pass (in tcg/tcg.c) for that
-  opcode.  Even if an opcode looks like it should be removed 
-  according to the rules, it won't be removed if this is set (1)
-  for that opcode.  If it is not set (0), the opcode is not immune
-  from the optimization logic and can be removed if needed.  This 
-  is necessary to avoid having it optimize out taint branching 
-  opcode paths. This is shared out to tcg.c via an extern. */
-uint8_t gen_opc_opt_immune_metadata[METADATA_SIZE];
-#endif // AWH
-/* These are the number of temps that are created for the purpose of
-  passing concrete values and registers into the taint logging helpers. */
-#define MAX_TAINT_LOG_TEMPS 12
-static TCGv taint_log_temps[MAX_TAINT_LOG_TEMPS];
-
-/* Used for building up lists of args for the logging helper funcs */
-static TCGArg helper_arg_array[MAX_TAINT_LOG_TEMPS];
-
-static inline void set_concrete_i32(int index, TCGv arg)
-{
-  tcg_gen_mov_i32(taint_log_temps[index], arg);
-  helper_arg_array[index] = taint_log_temps[index];
-}
-
-static inline void set_concrete_LHS_i32(int index, TCGv arg)
-{
-  //if (tcg_ctx.temps[arg].val_type == TEMP_VAL_DEAD)
-  if (arg >= tcg_ctx.nb_globals)
-    tcg_gen_movi_i32(taint_log_temps[index], 0);
-  else
-    tcg_gen_mov_i32(taint_log_temps[index], arg);
-  helper_arg_array[index] = taint_log_temps[index];
-}
-
-static inline void set_arg_i32(int index, TCGv arg)
-{
-  tcg_gen_movi_i32(taint_log_temps[index], arg);
-  helper_arg_array[index] = taint_log_temps[index];
-}
-#endif /* TCG_LOGGING_TAINT */
 
 /*static*/ TCGv find_shadow_arg(TCGv arg)
 {
@@ -215,11 +164,14 @@ static inline int gen_taintcheck_insn(int search_pc)
 
   int nb_args=0;
   int opc_index=0, opparam_index=0;
-  int i=0, x=0;
+  int i=0/*, x=0*/;
   uint16_t opc=0;
   int nb_oargs=0, nb_iargs=0, nb_cargs=0;
-  TCGv arg0, arg1, arg2, arg3, arg4, arg5, arg6;
-  TCGv t0, t1, t2, t3, t4, t5, t6, t_zero;
+  TCGv arg0, arg1, arg2, arg3, arg4, arg5;
+  TCGv t0, t1, t2, t3, t4, t_zero;
+#if defined(TARGET_I386)
+  TCGv arg6, t5, t6;
+#endif /* TARGET check */
   TCGv orig0, orig1, orig2, orig3, orig4, orig5;
 
   /* Copy all of the existing ops/parms into a new buffer to back them up. */
@@ -249,7 +201,7 @@ static inline int gen_taintcheck_insn(int search_pc)
   gen_opc_ptr = gen_old_opc_ptr;
   gen_opparam_ptr = gen_old_opparam_ptr;
 
-#if defined(TCG_LOGGING_TAINT) || defined(LOG_POINTER) || defined(LOG_TAINTED_EIP)
+#if defined(LOG_TAINTED_EIP)
   /* Allocate our temps for logging taint */
   for (i=0; i < MAX_TAINT_LOG_TEMPS; i++)
 #if TCG_TARGET_REG_BITS == 32
@@ -257,7 +209,7 @@ static inline int gen_taintcheck_insn(int search_pc)
 #else
     taint_log_temps[i] = tcg_temp_new_i64();
 #endif /* TCG_TARGET_REG_BITS */
-#endif /* TCG_LOGGING_TAINT */
+#endif /* LOG_ check */
 
   /* Copy and instrument the opcodes that need taint tracking */
   while(opc_index < nb_opc) {
@@ -305,20 +257,6 @@ static inline int gen_taintcheck_insn(int search_pc)
        entries we need to put in the metadata buffers to keep
        everything in sync. */
     gen_old_opc_ptr = gen_opc_ptr;
-#if 0 //defined(USE_TCG_OPTIMIZATIONS)
-    /* Liveness check: If the opcode that we are going to instrument
-      will be eliminated in a later liveness check (according to the
-      metadata held in gen_old_liveness_metadata), then we won't
-      instrument it. */
-    if(!gen_old_liveness_metadata[opc_index-1]) {
-      /* Tell the REAL optimizer pass in tcg/tcg.c that it is OK
-        to optimize this opcode out. */
-#ifdef TCG_TAINT_LOGGING
-      gen_opc_opt_immune_metadata[opc_index-1] = 0;
-#endif /* TCG_TAINT_BRANCHING */
-      goto skip_instrumentation;
-    }
-#endif /* USE_TCG_OPTIMIZATIONS */
 
     switch(opc)
     {
@@ -428,10 +366,6 @@ static inline int gen_taintcheck_insn(int search_pc)
 #endif // AWH
 #endif /* TARGET_I386 */
               tcg_gen_movi_i32(arg0, 0);
-#ifdef TCG_TAINT_BRANCHING
-            /* LHS now initialized */
-            gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
           }
 #ifdef TARGET_I386
 #define HELPER_SECTION_FIVE
@@ -473,22 +407,6 @@ static inline int gen_taintcheck_insn(int search_pc)
           gen_opparam_ptr -= 5;
           gen_opc_ptr--;
 
-#ifdef TCG_LOGGING_TAINT
-#ifdef LOG_DEPOSIT_I32
-          /* Insert logging */
-          set_arg_i32(0, orig0);
-          set_arg_i32(1, orig1);
-          set_arg_i32(2, orig2);
-          set_arg_i32(3, pos);
-          set_arg_i32(4, len);
-          //set_concrete_LHS_i32(5, arg0);
-          set_concrete_i32(5, arg1);
-          set_concrete_i32(6, arg2);
-
-          tcg_gen_helperN(helper_taint_log_deposit_i32, 0, 0, TCG_CALL_DUMMY_ARG, 7, helper_arg_array);
-#endif /* LOG_DEPOSIT_I32 */
-#endif /* TCG_LOGGING_TAINT */
-
           /* Insert taint IR */
           // Handle special 32-bit transfer case (copy arg2 taint)
           if (len == 32)
@@ -526,25 +444,6 @@ static inline int gen_taintcheck_insn(int search_pc)
           gen_opparam_ptr -= 6;
           gen_opc_ptr--;
 
-#ifdef TCG_LOGGING_TAINT
-#ifdef LOG_SETCOND2_I32
-          /* Insert logging */
-          set_arg_i32(0, orig0);
-          set_arg_i32(1, orig1);
-          set_arg_i32(2, orig2);
-          set_arg_i32(3, orig3);
-          set_arg_i32(4, orig4);
-          set_arg_i32(5, orig5);
-          //set_concrete_LHS_i32(6, arg0);
-          set_concrete_i32(6, arg1);
-          set_concrete_i32(7, arg2);
-          set_concrete_i32(8, arg3);
-          set_concrete_i32(9, arg4);
-
-          tcg_gen_helperN(helper_taint_log_setcond2_i32, 0, 0, TCG_CALL_DUMMY_ARG, 10, helper_arg_array);
-#endif /* LOG_SETCOND2_I32 */
-#endif /* TCG_LOGGING_TAINT */
-
           /* Insert taint IR */
           // Combine high/low taint of Input 1 into t2
           t2 = tcg_temp_new_i32();
@@ -576,11 +475,6 @@ static inline int gen_taintcheck_insn(int search_pc)
           tcg_gen_movi_i32(t_zero, 0);
           tcg_gen_setcond_i32(TCG_COND_NE, t2, t0, t_zero); // Reuse t2
           tcg_gen_neg_i32(arg0, t2);
-
-#ifdef TCG_TAINT_BRANCHING
-          /* LHS now initialized */
-          gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
 
           /* Reinsert original opcode */
           tcg_gen_op6i_i32(INDEX_op_setcond2_i32, orig0, orig1, orig2, orig3, orig4, orig5);
@@ -626,15 +520,6 @@ static inline int gen_taintcheck_insn(int search_pc)
           gen_opparam_ptr -= 2;
           gen_opc_ptr--;
 
-#ifdef TCG_LOGGING_TAINT
-#ifdef LOG_MOVI_I32
-          /* Insert logging */
-          set_arg_i32(0, orig0);
-          //set_concrete_LHS_i32(1, arg0); 
-          tcg_gen_helperN(helper_taint_log_movi_i32, 0, 0, TCG_CALL_DUMMY_ARG, 1, helper_arg_array);
-#endif /* LOG_MOVI_I32 */
-#endif /* TCG_LOGGING_TAINT */
-
           /* Insert taint propagation */
           tcg_gen_movi_i32(arg0, 0);
 
@@ -654,17 +539,6 @@ static inline int gen_taintcheck_insn(int search_pc)
           /* Rewind the instruction stream */
           gen_opparam_ptr -= 2;
           gen_opc_ptr--;
-
-#ifdef TCG_LOGGING_TAINT
-#ifdef LOG_MOV_I32 
-          /* Insert logging */
-          set_arg_i32(0, orig0);
-          set_arg_i32(1, orig1);
-          //set_concrete_LHS_i32(2, arg0);
-          set_concrete_i32(2, arg1);
-          tcg_gen_helperN(helper_taint_log_mov_i32, 0, 0, TCG_CALL_DUMMY_ARG, 3, helper_arg_array);
-#endif /* LOG_MOV_I32 */
-#endif /* TCG_LOGGING_TAINT */
 
           /* Insert taint propagation */
           tcg_gen_mov_i32(arg0, arg1);
@@ -693,17 +567,12 @@ static inline int gen_taintcheck_insn(int search_pc)
           /* Patch qemu_ld* opcode into taint_qemu_ld* */
           gen_opc_ptr[-1] += (INDEX_op_taint_qemu_ld8u - INDEX_op_qemu_ld8u);
           orig0 = gen_opparam_ptr[-3];
+
           /* Are we doing pointer tainting? */
           if (taint_load_pointers_enabled) {
             arg1 = find_shadow_arg(gen_opparam_ptr[-2]);
-            int addr = gen_opparam_ptr[-2];
+        //    int addr = gen_opparam_ptr[-2];
             if (arg1) {
-#ifdef LOG_POINTER
-                set_con_i32(0, addr);
-                set_con_i32(1, arg1);
-                tcg_gen_helperN(helper_taint_log_pointer, 0, 0, TCG_CALL_DUMMY_ARG, 2, helper_arg_array);
-
-#endif
 
 #if (TCG_TARGET_REG_BITS == 64)
                 t0 = tcg_temp_new_i64();
@@ -764,10 +633,6 @@ static inline int gen_taintcheck_insn(int search_pc)
           } else
             /* Patch in opcode to load taint from tempidx */
             tcg_gen_ld_i32(arg0, cpu_env, offsetof(OurCPUState,tempidx));
-#ifdef TCG_TAINT_BRANCHING
-          /* LHS now initialized */
-          gen_opc_init_metadata[orig0] = 1;
-#endif /* TCG_TAINT_BRANCHING */
         }
         break;
 
@@ -1097,21 +962,6 @@ static inline int gen_taintcheck_insn(int search_pc)
           gen_opparam_ptr -= 4;
           gen_opc_ptr--;
 
-#ifdef TCG_LOGGING_TAINT
-#ifdef LOG_DEPOSIT_I32
-          /* Insert logging */
-          set_arg_i32(0, orig0);
-          set_arg_i32(1, orig1);
-          set_arg_i32(2, orig2);
-          set_arg_i32(3, orig3);
-          //set_concrete_LHS_i32(4, arg0);
-          set_concrete_i32(4, arg1);
-          set_concrete_i32(5, arg2);
-
-          tcg_gen_helperN(helper_taint_log_setcond_i32, 0, 0, TCG_CALL_DUMMY_ARG, 6, helper_arg_array);
-#endif /* LOG_DEPOSIT_I32 */
-#endif /* TCG_LOGGING_TAINT */
-
           if (arg1 && arg2) {
             t0 = tcg_temp_new_i32();
             tcg_gen_or_i32(t0, arg1, arg2);
@@ -1157,20 +1007,6 @@ static inline int gen_taintcheck_insn(int search_pc)
           /* Rewind instruction stream */
           gen_opparam_ptr -= 3;
           gen_opc_ptr--;
-
-#ifdef TCG_LOGGING_TAINT
-#ifdef LOG_SHL_I32
-          /* Insert logging */
-          set_arg_i32(0, orig0);
-          set_arg_i32(1, orig1);
-          set_arg_i32(2, orig2);
-          //set_concrete_LHS_i32(3, arg0);
-          set_concrete_i32(3, arg1);
-          set_concrete_i32(4, arg2);
-
-          tcg_gen_helperN(helper_taint_log_shl_i32, 0, 0, TCG_CALL_DUMMY_ARG, 5, helper_arg_array);
-#endif /* LOG_SHL_I32 */
-#endif /* TCG_LOGGING_TAINT */
 
           /* Insert taint IR */
           if (!arg1 && !arg2) {
@@ -1221,20 +1057,6 @@ static inline int gen_taintcheck_insn(int search_pc)
           gen_opparam_ptr -= 3;
           gen_opc_ptr--;
 
-#ifdef TCG_LOGGING_TAINT
-#ifdef LOG_SHR_I32
-          /* Insert logging */
-          set_arg_i32(0, orig0);
-          set_arg_i32(1, orig1);
-          set_arg_i32(2, orig2);
-          //set_concrete_LHS_i32(3, arg0);
-          set_concrete_i32(3, arg1);
-          set_concrete_i32(4, arg2);
-
-          tcg_gen_helperN(helper_taint_log_shr_i32, 0, 0, TCG_CALL_DUMMY_ARG, 5, helper_arg_array);
-#endif /* LOG_SHR_I32 */
-#endif /* TCG_LOGGING_TAINT */
-
           /* Insert taint IR */
           if (!arg1 && !arg2) {
             tcg_gen_movi_i32(arg0, 0);
@@ -1283,20 +1105,6 @@ static inline int gen_taintcheck_insn(int search_pc)
           /* Rewind the instruction stream */
           gen_opparam_ptr -= 3;
           gen_opc_ptr--;
-
-#ifdef TCG_LOGGING_TAINT
-#ifdef LOG_SAR_I32
-          /* Insert logging */
-          set_arg_i32(0, orig0);
-          set_arg_i32(1, orig1);
-          set_arg_i32(2, orig2);
-          //set_concrete_LHS_i32(3, arg0);
-          set_concrete_i32(3, arg1);
-          set_concrete_i32(4, arg2);
-
-          tcg_gen_helperN(helper_taint_log_sar_i32, 0, 0, TCG_CALL_DUMMY_ARG, 5, helper_arg_array);
-#endif /* LOG_SAR_I32 */
-#endif /* TCG_LOGGING_TAINT */
 
           /* Insert taint IR */
           if (!arg1 && !arg2) {
@@ -1348,20 +1156,6 @@ static inline int gen_taintcheck_insn(int search_pc)
           gen_opparam_ptr -= 3;
           gen_opc_ptr--;
 
-#ifdef TCG_LOGGING_TAINT
-#ifdef LOG_ROTL_I32
-          /* Insert logging */
-          set_arg_i32(0, orig0);
-          set_arg_i32(1, orig1);
-          set_arg_i32(2, orig2);
-          //set_concrete_LHS_i32(3, arg0);
-          set_concrete_i32(3, arg1);
-          set_concrete_i32(4, arg2);
-
-          tcg_gen_helperN(helper_taint_log_rotl_i32, 0, 0, TCG_CALL_DUMMY_ARG, 5, helper_arg_array);
-#endif /* LOG_ROTL_I32 */
-#endif /* TCG_LOGGING_TAINT */
- 
           /* Insert tainting IR */
           if (!arg1 && !arg2) {
             tcg_gen_movi_i32(arg0, 0);
@@ -1410,20 +1204,6 @@ static inline int gen_taintcheck_insn(int search_pc)
           /* Rewind instruction stream */
           gen_opparam_ptr -= 3;
           gen_opc_ptr--;
-
-#ifdef TCG_LOGGING_TAINT
-#ifdef LOG_ROTR_I32
-          /* Insert logging */
-          set_arg_i32(0, orig0);
-          set_arg_i32(1, orig1);
-          set_arg_i32(2, orig2);
-          //set_concrete_LHS_i32(3, arg0);
-          set_concrete_i32(3, arg1);
-          set_concrete_i32(4, arg2);
-
-          tcg_gen_helperN(helper_taint_log_rotr_i32, 0, 0, TCG_CALL_DUMMY_ARG, 5, helper_arg_array);
-#endif /* LOG_ROTR_I32 */
-#endif /* TCG_LOGGING_TAINT */
 
           /* Insert tainting IR */
           if (!arg1 && !arg2) {
@@ -1600,19 +1380,6 @@ static inline int gen_taintcheck_insn(int search_pc)
           gen_opparam_ptr -= 3;
           gen_opc_ptr--;
 
-#ifdef TCG_LOGGING_TAINT
-#ifdef LOG_MUL_I32
-          /* Insert logging */
-          set_arg_i32(0, orig0);
-          set_arg_i32(1, orig1);
-          set_arg_i32(2, orig2);
-          //set_concrete_LHS_i32(3, arg0);
-          set_concrete_i32(3, arg1);
-          set_concrete_i32(4, arg2);
-
-          tcg_gen_helperN(helper_taint_log_mul_i32, 0, 0, TCG_CALL_DUMMY_ARG, 5, helper_arg_array);
-#endif /* LOG_MUL_I32 */
-#endif /* TCG_LOGGING_TAINT */
           if (!arg1 && !arg2) {
             tcg_gen_movi_i32(arg0, 0);
             /* Reinsert original opcode */
@@ -3008,9 +2775,6 @@ static inline int gen_taintcheck_insn(int search_pc)
         assert(1==0);
         break;  
     } /* End switch */
-//#ifdef USE_TCG_OPTIMIZATIONS
-    skip_instrumentation:;
-//#endif /* USE_TCG_OPTIMIZATIONS */
   } /* End taint while loop */
 
   return return_lj;

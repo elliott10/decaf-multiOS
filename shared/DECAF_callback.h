@@ -49,27 +49,40 @@ extern DECAF_Handle DECAF_register_callback(
 
 extern int DECAF_unregister_callback(DECAF_callback_type_t cb_type, DECAF_Handle handle);
 
-DECAF_Handle DECAF_registerOpcodeRangeCallbacks (
+extern DECAF_Handle DECAF_registerOpcodeRangeCallbacks (
 		DECAF_callback_func_t handler,
 		OpcodeRangeCallbackConditions *condition,
 		uint16_t start_opcode,
 		uint16_t end_opcode);
 
-DECAF_Handle DECAF_registerOptimizedBlockBeginCallback(
+extern DECAF_Handle DECAF_registerOptimizedBlockBeginCallback(
     DECAF_callback_func_t cb_func,
     int *cb_cond,
     gva_t addr,
     OCB_t type);
 
-DECAF_Handle DECAF_registerOptimizedBlockEndCallback(
+extern DECAF_Handle DECAF_registerOptimizedBlockEndCallback(
     DECAF_callback_func_t cb_func,
     int *cb_cond,
     gva_t from,
     gva_t to);
 
-int DECAF_unregisterOptimizedBlockBeginCallback(DECAF_Handle handle);
+extern int DECAF_unregisterOptimizedBlockBeginCallback(DECAF_Handle handle);
 
-int DECAF_unregisterOptimizedBlockEndCallback(DECAF_Handle handle);
+extern int DECAF_unregisterOptimizedBlockEndCallback(DECAF_Handle handle);
+
+extern DECAF_errno_t DECAF_unregisterOpcodeRangeCallbacks(DECAF_Handle handle);
+extern void helper_DECAF_invoke_block_begin_callback(CPUState* env, TranslationBlock* tb);
+extern void helper_DECAF_invoke_block_end_callback(CPUState* env, TranslationBlock* tb, gva_t from);
+extern void helper_DECAF_invoke_insn_begin_callback(CPUState* env);
+extern void helper_DECAF_invoke_insn_end_callback(CPUState* env);
+extern void helper_DECAF_invoke_eip_check_callback(gva_t source_eip, gva_t target_eip, gva_t target_eip_taint);
+extern void helper_DECAF_invoke_opcode_range_callback(
+  CPUState *env,
+  target_ulong eip,
+  target_ulong next_eip,
+  uint32_t op);
+extern void DECAF_callback_init(void);
 
 #ifdef __cplusplus
 }

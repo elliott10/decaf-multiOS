@@ -58,11 +58,12 @@ static inline DATA_TYPE glue(taint_io_read, SUFFIX)(target_phys_addr_t physaddr,
 #endif
 #endif /* SHIFT > 2 */
     //res.taint = cpu_single_env->tempidx;
-
+#if 0 // AWH
     if (cpu_single_env->tempidx/*res.taint*/) {
       fprintf(stderr, "MMAP IO %s() -> physaddr: 0x%08x, taint: %u\n", "__taint_io_read", physaddr, cpu_single_env->tempidx);
       //__asm__ ("int $3");
     }
+#endif // AWH
     return res;
 }
 
@@ -120,11 +121,11 @@ fprintf(stderr, "Entry %s() -> addr: 0x%08x mmu_idx: 0x%08x\n", "__taint_ldb", a
 #endif
             addend = env->tlb_table[mmu_idx][index].addend;
             res = glue(glue(ld, USUFFIX), _raw)((uint8_t *)(long)(addr+addend));
-            glue(glue(__taint_ld, SUFFIX), _raw)((uint8_t *)(long)(addr+addend),addr);
+            glue(glue(__taint_ld, SUFFIX), _raw)((unsigned long)(addr+addend),addr);
             //Hu-Mem read callback
 #ifndef SOFTMMU_CODE_ACCESS
             if(DECAF_is_callback_needed(DECAF_MEM_READ_CB))// host vitual addr+addend
-              helper_DECAF_invoke_mem_read_callback(addr,qemu_ram_addr_from_host_nofail(addr+addend),DATA_SIZE);
+              helper_DECAF_invoke_mem_read_callback(addr,qemu_ram_addr_from_host_nofail((void *)(addr+addend)),DATA_SIZE);
 #endif
             //end
 
@@ -184,14 +185,20 @@ static DATA_TYPE glue(glue(taint_slow_ld, SUFFIX), MMUSUFFIX)(target_ulong addr,
                                                           mmu_idx, retaddr);
 /* Special case for 32-bit host/guest and a 64-bit load */
 #if ((TCG_TARGET_REG_BITS == 32) && (DATA_SIZE == 8))
-            taint1 = cpu_single_env->tempidx | (cpu_single_env->tempidx2 << 32);
+            taint1 = cpu_single_env->tempidx2;
+            taint1 = taint1 << 32;
+            taint1 |= cpu_single_env->tempidx;
+            //taint1 = cpu_single_env->tempidx | (cpu_single_env->tempidx2 << 32);
 #else
             taint1 = cpu_single_env->tempidx;
 #endif /* ((TCG_TARGET_REG_BITS == 32) && (DATA_SIZE == 8)) */
             res2 = glue(glue(taint_slow_ld, SUFFIX), MMUSUFFIX)(addr2,
                                                           mmu_idx, retaddr);
 #if ((TCG_TARGET_REG_BITS == 32) && (DATA_SIZE == 8))
-            taint2 = cpu_single_env->tempidx | (cpu_single_env->tempidx2 << 32);
+            taint2 = cpu_single_env->tempidx2;
+            taint2 = taint2 << 32;
+            taint2 |= cpu_single_env->tempidx;
+            //taint2 = cpu_single_env->tempidx | (cpu_single_env->tempidx2 << 32);
 #else
             taint2 = cpu_single_env->tempidx;
 #endif /* ((TCG_TARGET_REG_BITS == 32) && (DATA_SIZE == 8)) */
@@ -219,11 +226,11 @@ static DATA_TYPE glue(glue(taint_slow_ld, SUFFIX), MMUSUFFIX)(target_ulong addr,
             /* unaligned/aligned access in the same page */
             addend = env->tlb_table[mmu_idx][index].addend;
             res = glue(glue(ld, USUFFIX), _raw)((uint8_t *)(long)(addr+addend));
-            glue(glue(__taint_ld, SUFFIX), _raw)((uint8_t *)(long)(addr+addend),addr);
+            glue(glue(__taint_ld, SUFFIX), _raw)((unsigned long)(addr+addend),addr);
             //Hu-Mem read callback
 #ifndef SOFTMMU_CODE_ACCESS
             if(DECAF_is_callback_needed(DECAF_MEM_READ_CB))
-              helper_DECAF_invoke_mem_read_callback(addr,qemu_ram_addr_from_host_nofail(addr+addend),DATA_SIZE);
+              helper_DECAF_invoke_mem_read_callback(addr,qemu_ram_addr_from_host_nofail((void *)(addr+addend)),DATA_SIZE);
 #endif
             //end
 
@@ -373,11 +380,11 @@ fprintf(stderr, "Start  %s() -> addr: 0x%08x, data: 0x%08x, mmu_idx: %d, taint: 
 #endif
             addend = env->tlb_table[mmu_idx][index].addend;
             glue(glue(st, SUFFIX), _raw)((uint8_t *)(long)(addr+addend), val);
-            glue(glue(__taint_st, SUFFIX), _raw)((uint8_t *)(long)(addr+addend),addr);
+            glue(glue(__taint_st, SUFFIX), _raw)((unsigned long)(addr+addend),addr);
             //Hu-Mem write callback
 #ifndef SOFTMMU_CODE_ACCESS
             if(DECAF_is_callback_needed(DECAF_MEM_WRITE_CB))
-              helper_DECAF_invoke_mem_write_callback(addr,qemu_ram_addr_from_host_nofail(addr+addend),DATA_SIZE);
+              helper_DECAF_invoke_mem_write_callback(addr,qemu_ram_addr_from_host_nofail((void *)(addr+addend)),DATA_SIZE);
 #endif
             //end
         }
@@ -421,7 +428,10 @@ static void glue(glue(taint_slow_st, SUFFIX), MMUSUFFIX)(target_ulong addr,
                setup tempidx for each of these single-byte stores */
 /* Special case for 32-bit host/guest and a 64-bit load */
 #if ((TCG_TARGET_REG_BITS == 32) && (DATA_SIZE == 8))
-            backup_taint = cpu_single_env->tempidx | (cpu_single_env->tempidx2 << 32);
+            backup_taint = cpu_single_env->tempidx2;
+            backup_taint = backup_taint << 32;
+            backup_taint |= cpu_single_env->tempidx;
+            //backup_taint = cpu_single_env->tempidx | (cpu_single_env->tempidx2 << 32);
 #else
             backup_taint = cpu_single_env->tempidx;
 #endif /* ((TCG_TARGET_REG_BITS == 32) && (DATA_SIZE == 8)) */
@@ -443,11 +453,11 @@ static void glue(glue(taint_slow_st, SUFFIX), MMUSUFFIX)(target_ulong addr,
             /* aligned/unaligned access in the same page */
             addend = env->tlb_table[mmu_idx][index].addend;
             glue(glue(st, SUFFIX), _raw)((uint8_t *)(long)(addr+addend), val);
-            glue(glue(__taint_st, SUFFIX), _raw)((uint8_t *)(long)(addr+addend),addr);
+            glue(glue(__taint_st, SUFFIX), _raw)((unsigned long)(addr+addend),addr);
             //Hu-Mem read callback
-#if SUFFIX != _cmmu
+#if defined(ADD_MEM_CB)
             if(DECAF_is_callback_needed(DECAF_MEM_WRITE_CB))
-              helper_DECAF_invoke_mem_write_callback(addr,qemu_ram_addr_from_host_nofail(addr+addend),DATA_SIZE);
+              helper_DECAF_invoke_mem_write_callback(addr,qemu_ram_addr_from_host_nofail((void*)(addr+addend)),DATA_SIZE);
 #endif
             //end
 

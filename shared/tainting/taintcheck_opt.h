@@ -35,8 +35,8 @@ extern "C" {
 static inline uint64_t taintcheck_register_check(int regid,int offset,int size,CPUState *env){
 	int off = offset*8;
 #if defined(TARGET_MIPS)
-    return (size < 4) ? (env->active_tc.taint_regs[regid]>>off)
-        &size_to_mask(size):env->active_tc.taint_regs[regid]>>off;
+    return (size < 4) ? (env->active_tc.taint_gpr[regid]>>off)
+        &size_to_mask(size):env->active_tc.taint_gpr[regid]>>off;
 #else
     return (size < 4) ? (env->taint_regs[regid]>>off)&size_to_mask(size):
     		env->taint_regs[regid]>>off;
@@ -108,7 +108,17 @@ int taintcheck_chk_hdread(const ram_addr_t paddr, const unsigned long vaddr,cons
 
 int taintcheck_chk_hdwrite(const ram_addr_t paddr, const unsigned long vaddr,const int size, const int64_t sect_num, const void *s);
 
+int taintcheck_taint_disk(const uint64_t index, const uint32_t taint, const int offset, const int size, const void *bs);
 
+uint32_t taintcheck_disk_check(const uint64_t index, const int offset, const int size, const void *bs);
+
+int taintcheck_init(void);
+
+void taintcheck_cleanup(void);
+
+int taintcheck_chk_hdin(const int size, const int64_t sect_num, const uint32_t offset, const void *s);
+
+int taintcheck_chk_hdout(const int size, const int64_t sect_num, const uint32_t offset, const void *s);
 
 #endif /* CONFIG_TCG_TAINT */
 #ifdef __cplusplus

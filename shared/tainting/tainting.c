@@ -14,6 +14,7 @@ If you have any questions about DECAF,please post it on
 http://code.google.com/p/decaf-platform/
 */
 #include "shared/tainting/tainting.h"
+#include "shared/tainting/taint_memory.h"
 
 void tainting_init(void)
 {

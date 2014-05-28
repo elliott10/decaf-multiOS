@@ -42,6 +42,10 @@ DEF_HELPER_6(taint_event5_64, void, i32, i64, i64, i64, i64, i64)
   Since values are the first arguments, the (VC, VC) form of the 
   opcode results in a helper function call of (V, V, C, C). 
 */
+#if 0 // AWH - Duplication of DECAF_callback_to_QEMU.h
+DEF_HELPER_2(DECAF_invoke_log_pointer_write, void, i32, i32)
+DEF_HELPER_2(DECAF_invoke_log_pointer_read, void, i32, i32)
+#endif // AWH
 DEF_HELPER_2(taint_log_pointer, void, i32, i32)
 /* 5 parms: (VC, VC, VC, V, V) */
 DEF_HELPER_8(taint_log_deposit_i32, void, i32, i32, i32, i32, i32, i32, i32, i32)

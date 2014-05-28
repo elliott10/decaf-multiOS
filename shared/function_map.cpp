@@ -53,7 +53,7 @@ map<string, map<string, uint32_t> > map_function_offset;
 
 // Map "module name" -> "offset" -> "function name"
 map<string, map<uint32_t, string> > map_offset_function;
-
+target_ulong funcmap_get_pc(const char *module_name, const char *function_name, target_ulong cr3) __attribute__((optimize("O0")));
 target_ulong funcmap_get_pc(const char *module_name, const char *function_name, target_ulong cr3)
 {
 	target_ulong base;
@@ -127,9 +127,10 @@ void parse_function(const char *message)
 
 	funcmap_insert_function(module, fname, offset);
 }
-
+// void funcmap_insert_function(const char *module, const char *fname, uint32_t offset) __attribute__((optimize("O0")));
 void funcmap_insert_function(const char *module, const char *fname, uint32_t offset)
 {
+	// cout << module << fname << offset << endl;
 	map<string, map<string, uint32_t> >::iterator iter = map_function_offset.find(module);
 	if (iter == map_function_offset.end()) {
 		map<string, uint32_t> func_offset;

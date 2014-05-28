@@ -133,7 +133,7 @@ void SimpleCallback_dispatch(SimpleCallback_t* pList, void* params)
 
   if (pList == NULL)
   {
-    return (NULL_POINTER_ERROR);
+    return; // (NULL_POINTER_ERROR);
   }
 
   //FIXME: not thread safe

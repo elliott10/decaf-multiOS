@@ -22,6 +22,9 @@ http://code.google.com/p/decaf-platform/
 
 #ifndef DECAF_TYPES_H
 #define DECAF_TYPES_H
+#ifdef __cplusplus
+#define __STDC_LIMIT_MACROS 1
+#endif /* __cplusplus */
 #include <stdint.h>
 #include "qemu-common.h"
 
@@ -33,14 +36,13 @@ typedef target_ulong gpa_t;
 // We use the same logic as defined in tcg.h
 //typedef tcg_target_ulong hva_t;
 //typedef tcg_target_ulong hpa_t;
-#if UINTPTR_MAX == UINT32_MAX
-  typedef uint32_t hva_t;
-  typedef uint32_t hpa_t;
-#elif UINTPTR_MAX == UINT64_MAX
+//#if UINTPTR_MAX == UINT32_MAX
+#if __WORDSIZE == 64
   typedef uint64_t hva_t;
   typedef uint64_t hpa_t;
 #else
-  #error BLARB
+  typedef uint32_t hva_t;
+  typedef uint32_t hpa_t;
 #endif
 
 typedef uintptr_t DECAF_Handle;

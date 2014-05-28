@@ -36,7 +36,7 @@ http://code.google.com/p/decaf-platform/
 #include "targphys.h"
 #include "compiler.h"
 #include "monitor.h"
-#include "shared/disasm.h"
+// #include "shared/disasm.h"
 #include "shared/DECAF_callback.h"
 
 #define MAX_REGS (CPU_NUM_REGS + 8) //we assume up to 8 temporary registers
@@ -46,9 +46,9 @@ extern "C" {
 #endif // __cplusplus
 
 /// Check if the current execution of guest system is in kernel mode (i.e., ring-0)
-static inline int DECAF_is_in_kernel(void)
+static inline int DECAF_is_in_kernel(CPUState *env)
 {
-  return (cpu_single_env->uncached_cpsr & CPSR_M) != ARM_CPU_MODE_USR;
+  return (env->uncached_cpsr & CPSR_M) != ARM_CPU_MODE_USR;
 }
 
 
@@ -67,9 +67,6 @@ static inline gva_t DECAF_getESP(CPUState* env)
 {
   return (env->regs[13]);
 }
-
-
-gpa_t DECAF_get_phys_addr_with_pgd(CPUState* env, gpa_t pgd, gva_t addr);
 
 #if 0 // AWH - Comment in as needed
 

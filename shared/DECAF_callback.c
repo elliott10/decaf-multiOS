@@ -28,9 +28,6 @@ http://code.google.com/p/decaf-platform/
 #include "shared/DECAF_callback.h"
 #include "shared/DECAF_callback_to_QEMU.h"
 #include "shared/utils/HashtableWrapper.h"
-#ifdef CONFIG_TCG_TAINT
-#include "shared/tainting/analysis_log.h"
-#endif /* CONFIG_TCG_TAINT */
 #if 0 // AWH
 #define PUSH_ALL() __asm__ __volatile__ ("push %rax"); \
 __asm__ __volatile__ ("push %rbx"); \
@@ -372,7 +369,7 @@ DECAF_Handle DECAF_registerOpcodeRangeCallbacks (
 	cb_struct->callback = handler;
 	cb_struct->from = start_opcode;
 	cb_struct->to = end_opcode;
-	cb_struct->enabled = condition;
+	cb_struct->enabled = (int *)condition;
 
 	for(i = start_opcode; i <= end_opcode; i++) {
 		instructionCallbacks[i] = cb_struct;
@@ -782,7 +779,7 @@ void helper_DECAF_invoke_opcode_range_callback(
 		}
 
 		//Condition violated
-		if(temp & *(cb_struct->enabled) == 0)
+		if(temp & (*(cb_struct->enabled) == 0) )
 			return;
 	}
 
@@ -795,23 +792,30 @@ void helper_DECAF_invoke_opcode_range_callback(
 	cb_struct->callback(&params);
 }
 
+#ifndef LIST_FOREACH_SAFE
+#define LIST_FOREACH_SAFE(var, head, field, tvar)                       \
+	        for ((var) = LIST_FIRST((head));                                \
+	            (var) && ((tvar) = LIST_NEXT((var), field), 1);             \
+	            (var) = (tvar))
+#endif
+
 void helper_DECAF_invoke_block_begin_callback(CPUState* env, TranslationBlock* tb)
 {
-  callback_struct_t *cb_struct;
-  DECAF_Callback_Params params;
+  static callback_struct_t *cb_struct, *tmp;
+  static DECAF_Callback_Params params;
 
   if ((env == NULL) || (tb == NULL))
   {
     return;
   }
 
-PUSH_ALL()
-
   params.bb.env = env;
   params.bb.tb = tb;
 
+PUSH_ALL()
+
   //FIXME: not thread safe
-  LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_BLOCK_BEGIN_CB], link) {
+  LIST_FOREACH_SAFE(cb_struct, &callback_list_heads[DECAF_BLOCK_BEGIN_CB], link, tmp){
     // If it is a global callback or it is within the execution context,
     // invoke this callback
     if(!cb_struct->enabled || *cb_struct->enabled)
@@ -849,16 +853,16 @@ POP_ALL()
 
 void helper_DECAF_invoke_block_end_callback(CPUState* env, TranslationBlock* tb, gva_t from)
 {
-  callback_struct_t *cb_struct;
-  DECAF_Callback_Params params;
+  static callback_struct_t *cb_struct;
+  static DECAF_Callback_Params params;
 
   if (env == NULL) return;
-
-PUSH_ALL()
 
   params.be.env = env;
   params.be.tb = tb;
   params.be.cur_pc = from;
+
+PUSH_ALL()
 
 #ifdef TARGET_I386
   params.be.next_pc = env->eip + env->segs[R_CS].base;
@@ -901,15 +905,13 @@ POP_ALL()
 
 void helper_DECAF_invoke_insn_begin_callback(CPUState* env)
 {
-	callback_struct_t *cb_struct;
-	DECAF_Callback_Params params;
+	static callback_struct_t *cb_struct;
+	static DECAF_Callback_Params params;
 
 	if (env == 0) return;
 
-PUSH_ALL()
-
 	params.ib.env = env;
-
+PUSH_ALL()
 	//FIXME: not thread safe
 	LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_INSN_BEGIN_CB], link) {
 		// If it is a global callback or it is within the execution context,
@@ -923,13 +925,12 @@ POP_ALL()
 
 void helper_DECAF_invoke_insn_end_callback(CPUState* env)
 {
-	callback_struct_t *cb_struct;
-        DECAF_Callback_Params params;
+	static callback_struct_t *cb_struct;
+        static DECAF_Callback_Params params;
 
 	if (env == 0) return;
-PUSH_ALL()
 	params.ie.env = env;
-
+PUSH_ALL()
 	//FIXME: not thread safe
 	LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_INSN_END_CB], link) {
 		// If it is a global callback or it is within the execution context,
@@ -944,14 +945,14 @@ POP_ALL()
 void helper_DECAF_invoke_mem_read_callback(gva_t virt_addr,gpa_t phy_addr,DATA_TYPE data_type)
 {
 
-	callback_struct_t *cb_struct;
-	DECAF_Callback_Params params;
+	static callback_struct_t *cb_struct;
+	static DECAF_Callback_Params params;
 	params.mr.dt=data_type;
 	params.mr.paddr=phy_addr;
 	params.mr.vaddr=virt_addr;
 
 	//if (cpu_single_env == 0) return;
-
+PUSH_ALL()
 	//FIXME: not thread safe
 	LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_MEM_READ_CB], link)
 	{
@@ -962,17 +963,18 @@ void helper_DECAF_invoke_mem_read_callback(gva_t virt_addr,gpa_t phy_addr,DATA_T
 			cb_struct->callback(&params);
 		}
 	}
+POP_ALL()
 }
 void helper_DECAF_invoke_eip_check_callback(gva_t source_eip, gva_t target_eip, gva_t target_eip_taint)
 {
-	callback_struct_t *cb_struct;
-	DECAF_Callback_Params params;
-	PUSH_ALL() //AWH
+	static callback_struct_t *cb_struct;
+	static DECAF_Callback_Params params;
+
 	params.ec.source_eip = source_eip;
     params.ec.target_eip = target_eip;
     params.ec.target_eip_taint = target_eip_taint;
 	//if (cpu_single_env == 0) return;
-
+PUSH_ALL()
 	//FIXME: not thread safe
 	LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_EIP_CHECK_CB], link)
 	{
@@ -983,14 +985,13 @@ void helper_DECAF_invoke_eip_check_callback(gva_t source_eip, gva_t target_eip, 
 			cb_struct->callback(&params);
 		}
 	}
-out:
 	POP_ALL() // AWH
 }
 
 void helper_DECAF_invoke_keystroke_callback(int keycode,uint32_t *taint_mark)
 {
-	callback_struct_t *cb_struct;
-	DECAF_Callback_Params params;
+	static callback_struct_t *cb_struct;
+	static DECAF_Callback_Params params;
 	params.ks.keycode=keycode;
 	params.ks.taint_mark=taint_mark;
 	//if (cpu_single_env == 0) return;
@@ -1011,8 +1012,8 @@ void helper_DECAF_invoke_keystroke_callback(int keycode,uint32_t *taint_mark)
 void helper_DECAF_invoke_mem_write_callback(gva_t virt_addr,gpa_t phy_addr,DATA_TYPE data_type)
 {
 
-	callback_struct_t *cb_struct;
-	DECAF_Callback_Params params;
+	static callback_struct_t *cb_struct;
+	static DECAF_Callback_Params params;
 	params.mw.dt=data_type;
 	params.mw.paddr=phy_addr;
 	params.mw.vaddr=virt_addr;
@@ -1032,14 +1033,14 @@ void helper_DECAF_invoke_mem_write_callback(gva_t virt_addr,gpa_t phy_addr,DATA_
 
 void helper_DECAF_invoke_nic_rec_callback(const uint8_t * buf,int size,int cur_pos,int start,int stop)
 {
-	callback_struct_t *cb_struct;
-	DECAF_Callback_Params params;
+	static callback_struct_t *cb_struct;
+	static DECAF_Callback_Params params;
 	params.nr.buf=buf;
 	params.nr.size=size;
 	params.nr.cur_pos=cur_pos;
 	params.nr.start=start;
 	params.nr.stop=stop;
-
+PUSH_ALL()
 	//FIXME: not thread safe
 	LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_NIC_REC_CB], link)
 	{
@@ -1049,12 +1050,13 @@ void helper_DECAF_invoke_nic_rec_callback(const uint8_t * buf,int size,int cur_p
 		if (!cb_struct->enabled || *cb_struct->enabled)
 			cb_struct->callback(&params);
 	}
+POP_ALL()
 }
 
 void helper_DECAF_invoke_nic_send_callback(uint32_t addr,int size, const uint8_t *buf)
 {
-	callback_struct_t *cb_struct;
-	DECAF_Callback_Params params;
+	static callback_struct_t *cb_struct;
+	static DECAF_Callback_Params params;
 	params.ns.addr=addr;
 	params.ns.size=size;
 	params.ns.buf=buf;
@@ -1073,13 +1075,13 @@ POP_ALL() // AWH
 
 void helper_DECAF_invoke_read_taint_mem(gva_t vaddr,gpa_t paddr,uint32_t size,uint8_t *taint_info)
 {
-	callback_struct_t *cb_struct;
-	DECAF_Callback_Params params;
+	static callback_struct_t *cb_struct;
+	static DECAF_Callback_Params params;
 	params.rt.paddr = paddr;
 	params.rt.vaddr = vaddr;
 	params.rt.size = size;
 	params.rt.taint_info = taint_info;
-
+PUSH_ALL()
 	//FIXME: not thread safe
 	LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_READ_TAINTMEM_CB], link)
 	{
@@ -1089,17 +1091,18 @@ void helper_DECAF_invoke_read_taint_mem(gva_t vaddr,gpa_t paddr,uint32_t size,ui
 		if (!cb_struct->enabled || *cb_struct->enabled)
 			cb_struct->callback(&params);
 	}
+POP_ALL()
 }
 
 void helper_DECAF_invoke_write_taint_mem(gva_t vaddr,gpa_t paddr,uint32_t size,uint8_t *taint_info)
 {
-	callback_struct_t *cb_struct;
-	DECAF_Callback_Params params;
+	static callback_struct_t *cb_struct;
+	static DECAF_Callback_Params params;
 	params.wt.paddr = paddr;
 	params.wt.vaddr = vaddr;
 	params.wt.size = size;
 	params.wt.taint_info = taint_info;
-
+PUSH_ALL()
 	//FIXME: not thread safe
 	LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_WRITE_TAINTMEM_CB], link)
 	{
@@ -1109,9 +1112,29 @@ void helper_DECAF_invoke_write_taint_mem(gva_t vaddr,gpa_t paddr,uint32_t size,u
 		if (!cb_struct->enabled || *cb_struct->enabled)
 			cb_struct->callback(&params);
 	}
+POP_ALL()
 }
 
-
+#ifdef CONFIG_TCG_LLVM
+void helper_DECAF_invoke_block_trans_callback(
+	const struct TranslationBlock *tb,
+	const struct TCGContext *tcg_ctx)
+{
+	static callback_struct_t *cb_struct;
+	static DECAF_Callback_Params params;
+	params.bt.tb = tb;
+	params.bt.tcg_ctx = tcg_ctx;
+PUSH_ALL()
+	// FIXME: not thread safe
+	LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_BLOCK_TRANS_CB], link)
+	{
+		params.cbhandle = (DECAF_Handle)cb_struct;
+		if (!cb_struct->enabled || *cb_struct->enabled)
+			cb_struct->callback(&params);
+	}
+POP_ALL()
+}
+#endif /* CONFIG_TCG_LLVM */
 void DECAF_callback_init(void)
 {
   int i;
@@ -1131,3 +1154,4 @@ void DECAF_callback_init(void)
   bEnableAllBlockEndCallbacks = 0;
   enableAllBlockEndCallbacksCount = 0;
 }
+

@@ -30,6 +30,7 @@
 #ifdef CONFIG_TCG_TAINT
 #include "tcg-op.h"
 #include "tainting/taint_memory.h"
+#include "tainting/tcg_taint.h"
 #else
 #include "tcg.h"
 #endif /* CONFIG_TCG_TAINT */
@@ -48,13 +49,6 @@ uint8_t gen_opc_instr_start[OPC_BUF_SIZE];
 void cpu_gen_init(void)
 {
     tcg_context_init(&tcg_ctx); 
-}
-
-
-void gen_taintcheck_intermediate_code()
-{
-	static uint16_t gen_new_opc_buf[OPC_BUF_SIZE];
-	int nc_opc = gen_opc_ptr - gen_opc_buf;
 }
 
 /* return non zero if the very first instruction is invalid so that

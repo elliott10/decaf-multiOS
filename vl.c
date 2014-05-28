@@ -166,7 +166,7 @@ int main(int argc, char **argv)
 #include "arch_init.h"
 
 #include "ui/qemu-spice.h"
-
+#include "shared/DECAF_main_internal.h" // AWH
 //#define DEBUG_NET
 //#define DEBUG_SLIRP
 

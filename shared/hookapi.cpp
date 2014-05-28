@@ -576,6 +576,7 @@ void check_unresolved_hooks()
 	}
 }
 
+// uintptr_t hookapi_hook_function_byname(const char *mod_name, const char *fun_name, int is_global, target_ulong cr3, hook_proc_t fnhook, void *opaque, uint32_t sizeof_opaque) __attribute__((optimize("O0")));
 uintptr_t hookapi_hook_function_byname(const char *mod_name, const char *fun_name,
                     int is_global, target_ulong cr3, hook_proc_t fnhook, void *opaque, uint32_t sizeof_opaque)
 {

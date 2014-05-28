@@ -16,7 +16,7 @@ http://code.google.com/p/decaf-platform/
 #ifndef _DISASM_PP_H
 #define _DISASM_PP_H
 
-#include "disasm.h"
+// #include "disasm.h"
 #include <stdint.h>
 #include <libiberty.h>
 //#include <irtoir.h>

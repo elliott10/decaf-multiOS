@@ -37,7 +37,7 @@
 #endif /* CONFIG_TCG_TAINT */
 
 #ifdef CONFIG_VMI_ENABLE
-extern void VMI_init();
+extern void VMI_init(void);
 #endif
 
 int DECAF_kvm_enabled = 0;
@@ -57,17 +57,14 @@ mon_cmd_t DECAF_info_cmds[] = {
 #include "DECAF_info_cmds.h"
 		{ NULL, NULL , }, };
 
-gpa_t DECAF_get_phys_addr(CPUState* env, gva_t addr) {
+
+
+static void convert_endian_4b(uint32_t *data);
+
+
+static gpa_t _DECAF_get_phys_addr(CPUState* env, gva_t addr) {
 	int mmu_idx, index;
 	uint32_t phys_addr;
-
-	if (env == NULL ) {
-#ifdef DECAF_NO_FAIL_SAFE
-		return(INV_ADDR);
-#else
-		env = cpu_single_env ? cpu_single_env : first_cpu;
-#endif
-	}
 
 	index = (addr >> TARGET_PAGE_BITS) & (CPU_TLB_SIZE - 1);
 	mmu_idx = cpu_mmu_index(env);
@@ -91,6 +88,34 @@ gpa_t DECAF_get_phys_addr(CPUState* env, gva_t addr) {
 	return (gpa_t) qemu_ram_addr_from_host_nofail(p);
 }
 
+gpa_t DECAF_get_phys_addr(CPUState* env, gva_t addr)
+{
+	gpa_t phys_addr;
+	if (env == NULL )
+	{
+#ifdef DECAF_NO_FAIL_SAFE
+		return(INV_ADDR);
+#else
+		env = /* AWH cpu_single_env ? cpu_single_env :*/ first_cpu;
+#endif
+	}
+
+#ifdef TARGET_MIPS
+	uint32_t ori_hflags = env->hflags;
+	env->hflags &= ~MIPS_HFLAG_UM;
+	env->hflags &= ~MIPS_HFLAG_SM;
+#endif
+
+	phys_addr = _DECAF_get_phys_addr(env, addr);
+
+	// restore hflags
+#ifdef TARGET_MIPS
+	env->hflags = ori_hflags;
+#endif
+	return phys_addr;
+
+}
+
 DECAF_errno_t DECAF_memory_rw(CPUState* env, uint32_t addr, void *buf, int len,
 		int is_write) {
 	int l;
@@ -100,15 +125,18 @@ DECAF_errno_t DECAF_memory_rw(CPUState* env, uint32_t addr, void *buf, int len,
 #ifdef DECAF_NO_FAIL_SAFE
 		return(INV_ADDR);
 #else
-		env = cpu_single_env ? cpu_single_env : first_cpu;
+		env = /* AWH cpu_single_env ? cpu_single_env :*/ first_cpu;
 #endif
 	}
+
+	int ret = 0;
 
 	while (len > 0) {
 		page = addr & TARGET_PAGE_MASK;
 		phys_addr = DECAF_get_phys_addr(env, page);
 		if (phys_addr == -1 || phys_addr > ram_size) {
-			return -1;
+			ret = -1;
+			break;
 		}
 		l = (page + TARGET_PAGE_SIZE) - addr;
 		if (l > len)
@@ -121,7 +149,8 @@ DECAF_errno_t DECAF_memory_rw(CPUState* env, uint32_t addr, void *buf, int len,
 		buf += l;
 		addr += l;
 	}
-	return 0;
+
+	return ret;
 }
 
 DECAF_errno_t DECAF_memory_rw_with_pgd(CPUState* env, target_ulong pgd,
@@ -130,7 +159,7 @@ DECAF_errno_t DECAF_memory_rw_with_pgd(CPUState* env, target_ulong pgd,
 #ifdef DECAF_NO_FAIL_SAFE
 		return (INV_ADDR);
 #else
-		env = cpu_single_env ? cpu_single_env : first_cpu;
+		env = /* AWH cpu_single_env ? cpu_single_env :*/ first_cpu;
 #endif
 	}
 
@@ -210,7 +239,7 @@ void DECAF_flushTranslationBlock_env(CPUState *env, uint32_t addr) {
 #ifdef DECAF_NO_FAIL_SAFE
 		return;
 #else
-		env = cpu_single_env ? cpu_single_env : first_cpu;
+		env = /* AWH cpu_single_env ? cpu_single_env :*/ first_cpu;
 #endif
 
 	}
@@ -231,7 +260,7 @@ void DECAF_flushTranslationPage_env(CPUState* env, uint32_t addr)
 #ifdef DECAF_NO_FAIL_SAFE
 		return;
 #else
-		env = cpu_single_env ? cpu_single_env : first_cpu;
+		env = /* AWH cpu_single_env ? cpu_single_env :*/ first_cpu;
 #endif
 	}
 
@@ -475,7 +504,6 @@ static int DECAF_load(QEMUFile * f, void *opaque, int version_id) {
 
 extern void tainting_init(void);
 extern void function_map_init(void);
-extern void DECAF_callback_init(void);
 
 void DECAF_init(void) {
 	DECAF_callback_init();
@@ -571,7 +599,7 @@ void DECAF_nic_in(const uint32_t addr, const int size) {
  * Keystroke related functions
  *
  */
-int taint_keystroke_enabled = 0;
+uint32_t taint_keystroke_enabled = 0;
 void DECAF_keystroke_place(int keycode) {
 	if (DECAF_is_callback_needed(DECAF_KEYSTROKE_CB))
 		helper_DECAF_invoke_keystroke_callback(keycode,
@@ -585,4 +613,25 @@ void DECAF_keystroke_read(uint8_t taint_status) {
 		cpu_single_env->tempidx = cpu_single_env->tempidx & 0xFF;
 	}
 #endif /*CONFIG_TCG_TAINT*/
+}
+
+
+DECAF_errno_t DECAF_read_ptr(CPUState* env, gva_t vaddr, gva_t *pptr)
+{
+	int ret = DECAF_read_mem(env, vaddr, sizeof(gva_t), pptr);
+	if(0 == ret)
+	{
+#ifdef TARGET_WORDS_BIGENDIAN
+		convert_endian_4b(pptr);
+#endif
+	}
+	return ret;
+}
+
+static void convert_endian_4b(uint32_t *data)
+{
+   *data = ((*data & 0xff000000) >> 24)
+         | ((*data & 0x00ff0000) >>  8)
+         | ((*data & 0x0000ff00) <<  8)
+         | ((*data & 0x000000ff) << 24);
 }

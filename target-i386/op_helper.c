@@ -34,6 +34,8 @@
 #include "softmmu_exec.h"
 #endif /* !defined(CONFIG_USER_ONLY) */
 
+#include "../shared/DECAF_main.h"
+
 //#define DEBUG_PCALL
 
 #ifdef DEBUG_PCALL
@@ -5903,7 +5905,7 @@ extern void (*insn_cbl2[16*16]) (uint32_t eip, uint32_t next_eip, uint32_t op);
 //uint32_t KiUserApcDispatcher_addr_l = 0xE430 + 0x7c900000;
 //uint32_t KiRaiseUserExceptionDispatcher_addr_l = 0xE4A8 + 0x7c900000;
 //uint32_t KiUserCallbackDispatcher_addr_l = 0xE440 + 0x7c900000;
-
+#if 0 // AWH
 void helper_insn_cb_dispatch(uint32_t eip, uint32_t next_eip, uint32_t op2)
 {
 
@@ -5925,7 +5927,7 @@ void helper_insn_cb_dispatch(uint32_t eip, uint32_t next_eip, uint32_t op2)
 	if(op > 0xf00 && op <= 0xfff) {
 		if(insn_cbl2[op-0xf00])
 			insn_cbl2[op-0xf00](eip, next_eip, op2);
-	} else if(op >= 0x0 && op <= 0xff){
+	} else if(/* AWH op >= 0x0 &&*/ op <= 0xff){
 		if(insn_cbl1[op])
 			insn_cbl1[op](eip, next_eip, op2);
 	} else {
@@ -5939,7 +5941,7 @@ void helper_insn_cb_dispatch(uint32_t eip, uint32_t next_eip, uint32_t op2)
 	}
 }
 //end - Aravind
-
+#endif // AWH
 #ifdef CONFIG_TCG_TAINT
 void helper_DECAF_taint_cmpxchg(void) {}
 

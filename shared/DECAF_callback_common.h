@@ -56,6 +56,9 @@ typedef enum {
         DECAF_TLB_EXEC_CB,
         DECAF_READ_TAINTMEM_CB,
         DECAF_WRITE_TAINTMEM_CB,
+#ifdef CONFIG_TCG_LLVM
+	DECAF_BLOCK_TRANS_CB,
+#endif /* CONFIG_TCG_LLVM */
         DECAF_LAST_CB, //place holder for the last position, no other uses.
 } DECAF_callback_type_t;
 
@@ -189,6 +192,13 @@ typedef struct _DECAF_Read_Write_Mem
 	uint8_t *taint_info;
 }DECAF_Write_Taint_Mem;
 
+#ifdef CONFIG_TCG_LLVM
+typedef struct _DECAF_Block_Trans_Params
+{
+	struct TranslationBlock *tb;
+	struct TCGContext *tcg_ctx;
+}DECAF_Block_Trans_Params;
+#endif /* CONFIG_TCG_LLVM */
 //LOK: A dummy type
 typedef struct _DECAF_Callback_Params
 {
@@ -208,6 +218,9 @@ typedef struct _DECAF_Callback_Params
 		DECAF_Tlb_Exec_Params tx;
 		DECAF_Read_Taint_Mem rt;
 		DECAF_Write_Taint_Mem wt;
+#ifdef CONFIG_TCG_LLVM
+		DECAF_Block_Trans_Params bt;
+#endif /* CONFIG_TCG_LLVM */
 	};
 } DECAF_Callback_Params;
 

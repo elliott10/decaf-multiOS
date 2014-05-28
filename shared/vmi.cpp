@@ -112,7 +112,7 @@ _skip_probe:
 }
 
 
-process* VMI_find_process_by_name(char *name)
+process* VMI_find_process_by_name(const char *name)
 {
 	unordered_map < uint32_t, process * >::iterator iter;
 	for (iter = process_map.begin(); iter != process_map.end(); iter++) {
@@ -396,7 +396,6 @@ int VMI_remove_module(uint32_t pid, uint32_t base)
 
 	proc->module_list.erase(m_iter);
 
-//	delete mod;
 	return 0;
 }
 

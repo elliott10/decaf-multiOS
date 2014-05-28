@@ -22,7 +22,7 @@ http://code.google.com/p/decaf-platform/
 #include <errno.h>
 #include <string.h>
 
-#include "disasm.h"
+// #include "disasm.h"
 
 InstDigraphs digraphs;
 
