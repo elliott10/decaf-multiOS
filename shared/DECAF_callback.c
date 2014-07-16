@@ -1124,7 +1124,9 @@ void helper_DECAF_invoke_block_trans_callback(
 	static DECAF_Callback_Params params;
 	params.bt.tb = tb;
 	params.bt.tcg_ctx = tcg_ctx;
-PUSH_ALL()
+/* AWH - Don't need PUSH/POP here because this callback is called at translation
+  time, not guest execution time. */
+//PUSH_ALL()
 	// FIXME: not thread safe
 	LIST_FOREACH(cb_struct, &callback_list_heads[DECAF_BLOCK_TRANS_CB], link)
 	{
@@ -1132,7 +1134,7 @@ PUSH_ALL()
 		if (!cb_struct->enabled || *cb_struct->enabled)
 			cb_struct->callback(&params);
 	}
-POP_ALL()
+//POP_ALL()
 }
 #endif /* CONFIG_TCG_LLVM */
 void DECAF_callback_init(void)

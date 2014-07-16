@@ -92,7 +92,7 @@ uint64_t *gDECAF_gen_opparam_buf;
 #endif /* TCG_TARGET_REG_BITS */
 #endif /* CONFIG_TCG_IR_LOG */
 /* AWH static */ TranslationBlock *tbs;
-static int code_gen_max_blocks;
+/* AWH static int */ uint32_t code_gen_max_blocks;
 TranslationBlock *tb_phys_hash[CODE_GEN_PHYS_HASH_SIZE];
 static int nb_tbs;
 /* any access to the tbs or the page table must use this lock */

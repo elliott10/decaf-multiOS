@@ -8010,7 +8010,7 @@ void optimize_flags_init(void)
 }
 
 #ifdef CONFIG_TCG_IR_LOG
-static inline void log_tcg_ir(TranslationBlock *tb)
+static inline void log_tcg_ir(TranslationBlock *tb, target_ulong pc_ptr, target_ulong pc_start)
 {
   int i;
 
@@ -8026,7 +8026,28 @@ static inline void log_tcg_ir(TranslationBlock *tb)
   {
     if (tcg_ctx.temps[i].temp_local)
       tb->DECAF_temp_type[i>>3] |= (1 << (i % 8));
-  }  
+    else
+      tb->DECAF_temp_type[i>>3] &= ~(1 << (i % 8));
+  }
+
+  /* Store information about the temps at to whether they are 32/64 bit */
+  for (i=tcg_ctx.nb_globals; i < (tcg_ctx.nb_globals + tcg_ctx.nb_temps); i++)
+  {
+    if (tcg_ctx.temps[i].type == TCG_TYPE_I64)
+      tb->DECAF_temp_size[i>>3] |= (1 << (i % 8));
+    else
+      tb->DECAF_temp_size[i>>3] &= ~(1 << (i % 8));
+  }
+
+#if 0 // AWH
+  /* Store the guest code */
+  memcpy((tb->DECAF_disasm_code), pc_ptr, sizeof(pc_ptr - pc_start));
+  tb->DECAF_disasm_size = pc_ptr - pc_start;
+  fprintf(stderr, "Storing guest asm (%d bytes)\n", tb->DECAF_disasm_size);
+  for(i=0; i < tb->DECAF_disasm_size; i++)
+    fprintf(stderr, "0x02%x ", pc_start + i);
+  fprintf(stderr, "\n");  
+#endif // AWH
 }
 #endif /* CONFIG_TCG_IR_LOG */
 
@@ -8153,7 +8174,7 @@ static inline void gen_intermediate_code_internal(CPUState *env,
                     }
 #endif /* CONFIG_TCG_LLVM */
 #ifdef CONFIG_TCG_IR_LOG
-                    log_tcg_ir(tb);
+                    log_tcg_ir(tb, pc_ptr, pc_start);
 #endif /* CONFIG_TCG_IR_LOG */
 #ifdef CONFIG_TCG_TAINT
                     if (taint_tracking_enabled)
@@ -8194,7 +8215,7 @@ static inline void gen_intermediate_code_internal(CPUState *env,
           }
 #endif /* CONFIG_TCG_LLVM */
 #ifdef CONFIG_TCG_IR_LOG
-            log_tcg_ir(tb);
+            log_tcg_ir(tb, pc_ptr, pc_start);
 #endif /* CONFIG_TCG_IR_LOG */
 #ifdef CONFIG_TCG_TAINT
             if (taint_tracking_enabled)
@@ -8217,7 +8238,7 @@ static inline void gen_intermediate_code_internal(CPUState *env,
             }
 #endif /* CONFIG_TCG_LLVM */
 #ifdef CONFIG_TCG_IR_LOG
-            log_tcg_ir(tb);
+            log_tcg_ir(tb, pc_ptr, pc_start);
 #endif /* CONFIG_TCG_IR_LOG */
 #ifdef CONFIG_TCG_TAINT
             if (taint_tracking_enabled)
@@ -8239,7 +8260,7 @@ static inline void gen_intermediate_code_internal(CPUState *env,
             }
 #endif /* CONFIG_TCG_LLVM */
 #ifdef CONFIG_TCG_IR_LOG
-            log_tcg_ir(tb);
+            log_tcg_ir(tb, pc_ptr, pc_start);
 #endif /* CONFIG_TCG_IR_LOG */
 #ifdef CONFIG_TCG_TAINT
             if (taint_tracking_enabled)
@@ -8258,7 +8279,7 @@ static inline void gen_intermediate_code_internal(CPUState *env,
           }
 #endif /* CONFIG_TCG_LLVM */
 #ifdef CONFIG_TCG_IR_LOG
-            log_tcg_ir(tb);
+            log_tcg_ir(tb, pc_ptr, pc_start);
 #endif /* CONFIG_TCG_IR_LOG */
 #ifdef CONFIG_TCG_TAINT
             if (taint_tracking_enabled)

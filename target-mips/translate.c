@@ -58,6 +58,17 @@ inline void log_tcg_ir(TranslationBlock *tb)
   {
     if (tcg_ctx.temps[i].temp_local)
       tb->DECAF_temp_type[i>>3] |= (1 << (i % 8));
+    else
+      tb->DECAF_temp_type[i>>3] &= ~(1 << (i % 8));
+  }
+
+  /* Store information about the temps at to whether they are 32/64 bit */
+  for (i=tcg_ctx.nb_globals; i < (tcg_ctx.nb_globals + tcg_ctx.nb_temps); i++)
+  {
+    if (tcg_ctx.temps[i].type == TCG_TYPE_I64)
+      tb->DECAF_temp_size[i>>3] |= (1 << (i % 8));
+    else
+      tb->DECAF_temp_size[i>>3] &= ~(1 << (i % 8));
   }
 }
 #endif /* CONFIG_TCG_IR_LOG */
