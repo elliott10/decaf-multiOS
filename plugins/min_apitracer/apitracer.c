@@ -19,8 +19,8 @@
 #include "vmi_callback.h"
 #include "vmi_c_wrapper.h"
 #include "DECAF_main.h"
-#include "DECAF_target.h"
-#include "DECAF_callback.h"
+//#include "DECAF_target.h"
+//#include "DECAF_callback.h"
 
 #include "hookapi.h"
 
