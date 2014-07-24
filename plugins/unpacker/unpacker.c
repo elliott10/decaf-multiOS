@@ -228,7 +228,7 @@ static void unpacker_block_begin(DECAF_Callback_Params*dcp)
 		  return ;
 		unpack_cr3 = cr3;
 	}
-	inContext = (unpack_cr3 == cr3) && (!DECAF_is_in_kernel()); //change end
+	inContext = (unpack_cr3 == cr3) && (!DECAF_is_in_kernel(cpu_single_env)); //change end
 	DECAF_read_register(eip_reg, &eip);//change end
 	if (!inContext)
 		return ;
