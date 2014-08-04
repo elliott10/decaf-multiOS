@@ -32,6 +32,7 @@ extern "C" {
 #endif /* __cplusplus */
 #include "windows_vmi.h"
 #include "linux_vmi.h"
+#include "ucore_vmi.h"
 
 #include "hookapi.h"
 // AWH #include "read_linux.h"
@@ -63,6 +64,7 @@ static os_handle_c handle_funds_c[] = {
 		{ WINXP_SP3_C, &find_winxpsp3, &win_vmi_init, },
 		{ WIN7_SP0_C, &find_win7sp0, &win_vmi_init, },
 		{ WIN7_SP1_C, &find_win7sp1, &win_vmi_init, },
+		{ UCORE_C, &find_ucore, &ucore_vmi_init, },
 #endif
 		{ LINUX_GENERIC_C, &find_linux, &linux_vmi_init,},
 };
