@@ -348,6 +348,7 @@ void ucore_load_one_section(const boost::property_tree::ptree &pt, int iSectionN
 
     // fill other fields
     FILL_TARGET_ULONG_FIELD(initproc);
+    FILL_TARGET_ULONG_FIELD(idleproc);
 #if 0
     FILL_TARGET_ULONG_FIELD(init_task_size  );
     FILL_TARGET_ULONG_FIELD(ts_tasks        );
