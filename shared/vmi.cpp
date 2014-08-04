@@ -96,6 +96,8 @@ static void block_end_cb(DECAF_Callback_Params* temp)
 	else if(GuestOS_index_c == 2 || GuestOS_index_c == 3)
 		monitor_printf(default_mon, "its win 7 \n");
 	else if(GuestOS_index_c == 4)
+		monitor_printf(default_mon, "its ucore\n");
+	else if(GuestOS_index_c == 5) 
 		monitor_printf(default_mon, "its linux \n");
 #endif
 

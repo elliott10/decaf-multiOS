@@ -405,7 +405,7 @@ int ucore_load_proc_info(CPUState * env, UcoreProcInfo &pi)
   boost::property_tree::ptree pt;
   ucore_get_procinfo_directory(sProcInfoPath);
   sProcInfoPath += "procinfo.ini";
-  monitor_printf(default_mon, "Procinfo path: %s\n",sProcInfoPath.c_str());
+  //monitor_printf(default_mon, "Procinfo path: %s\n",sProcInfoPath.c_str());
   // read procinfo.ini
   if (0 != access(sProcInfoPath.c_str(), 0))
   {
@@ -415,11 +415,19 @@ int ucore_load_proc_info(CPUState * env, UcoreProcInfo &pi)
   boost::property_tree::ini_parser::read_ini(sProcInfoPath, pt);
 
   int cntSection = pt.get("info.total", 0);
-  monitor_printf(default_mon, "Total Sections: %d\n", cntSection);
-  string ucore_name = pt.get<string>("1.ucore_name");
-  string ucore_id("uCore lab8");
-  if (ucore_name != ucore_id)
+  //monitor_printf(default_mon, "Total Sections: %d\n", cntSection);
+  target_ulong ucore_name_addr = pt.get<target_ulong>("1.ucore_name");
+  char ucore_name[11];
+  int count=ucore_get_mem_at(env,ucore_name_addr,ucore_name,sizeof(ucore_name));
+  if (count!=sizeof(ucore_name)){
+      //monitor_printf(default_mon, "get GUEST ucore_name error %d, %s\n",count,ucore_name);
+      return -1;
+  }
+
+  char ucore_id[11]="uCore lab8";
+  if (strncmp(ucore_name,ucore_id,sizeof(ucore_id))!=0)
   {
+    monitor_printf(default_mon,"ucore_name_addr %lu, ucore_name is %s || ucore_id is %s\n",ucore_name_addr,ucore_name,ucore_id);
     monitor_printf(default_mon, "VMI won't work.\nPlease configure procinfo.ini and restart DECAF.\n");
     bProcinfoMisconfigured = true;
     return CANNOT_MATCH_PROCINFO_SECTION;
