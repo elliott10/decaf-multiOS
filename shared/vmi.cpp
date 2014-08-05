@@ -280,6 +280,8 @@ int VMI_create_process(process *proc)
     	VMI_remove_process(proc->pid);
     }
 
+//chy maintain the kernel threads with the same cr3
+#if 0
     unordered_map < uint32_t, process * >::iterator iter2 =
         	process_map.find(proc->cr3);
     if (iter2 != process_map.end()) {
@@ -287,7 +289,8 @@ int VMI_create_process(process *proc)
     	// We force to remove that process
     	VMI_remove_process(iter2->second->pid);
     }
-
+#endif
+	
    	process_pid_map[proc->pid] = proc;
    	process_map[proc->cr3] = proc;
 

@@ -346,44 +346,38 @@ void ucore_load_one_section(const boost::property_tree::ptree &pt, int iSectionN
     strncpy(pi.strName, sName.c_str(), SIZE_OF_STR_NAME);
     pi.strName[SIZE_OF_STR_NAME-1] = '\0';
 
-    // fill other fields
+    //ucore global variables
     FILL_TARGET_ULONG_FIELD(initproc);
     FILL_TARGET_ULONG_FIELD(idleproc);
-#if 0
-    FILL_TARGET_ULONG_FIELD(init_task_size  );
-    FILL_TARGET_ULONG_FIELD(ts_tasks        );
-    FILL_TARGET_ULONG_FIELD(ts_pid          );
-    FILL_TARGET_ULONG_FIELD(ts_tgid         );
-    FILL_TARGET_ULONG_FIELD(ts_group_leader );
-    FILL_TARGET_ULONG_FIELD(ts_thread_group );
-    FILL_TARGET_ULONG_FIELD(ts_real_parent  );
-    FILL_TARGET_ULONG_FIELD(ts_mm           );
-    FILL_TARGET_ULONG_FIELD(ts_stack        );
-    FILL_TARGET_ULONG_FIELD(ts_real_cred    );
-    FILL_TARGET_ULONG_FIELD(ts_cred         );
-    FILL_TARGET_ULONG_FIELD(ts_comm         );
-    FILL_TARGET_ULONG_FIELD(cred_uid        );
-    FILL_TARGET_ULONG_FIELD(cred_gid        );
-    FILL_TARGET_ULONG_FIELD(cred_euid       );
-    FILL_TARGET_ULONG_FIELD(cred_egid       );
-    FILL_TARGET_ULONG_FIELD(mm_mmap         );
-    FILL_TARGET_ULONG_FIELD(mm_pgd          );
-    FILL_TARGET_ULONG_FIELD(mm_arg_start    );
-    FILL_TARGET_ULONG_FIELD(mm_start_brk    );
-    FILL_TARGET_ULONG_FIELD(mm_brk          );
-    FILL_TARGET_ULONG_FIELD(mm_start_stack  );
-    FILL_TARGET_ULONG_FIELD(vma_vm_start    );
-    FILL_TARGET_ULONG_FIELD(vma_vm_end      );
-    FILL_TARGET_ULONG_FIELD(vma_vm_next     );
-    FILL_TARGET_ULONG_FIELD(vma_vm_file     );
-    FILL_TARGET_ULONG_FIELD(vma_vm_flags    );
-    FILL_TARGET_ULONG_FIELD(vma_vm_pgoff    );
-    FILL_TARGET_ULONG_FIELD(file_dentry     );
-    FILL_TARGET_ULONG_FIELD(dentry_d_name   );
-    FILL_TARGET_ULONG_FIELD(dentry_d_iname  );
-    FILL_TARGET_ULONG_FIELD(dentry_d_parent );
-    FILL_TARGET_ULONG_FIELD(ti_task         );
-#endif
+	FILL_TARGET_ULONG_FIELD(proc_list);
+	//ucore proc struct related info
+	FILL_TARGET_ULONG_FIELD(sizeof_proc_struct);
+	FILL_TARGET_ULONG_FIELD(ps_state);
+	FILL_TARGET_ULONG_FIELD(ps_pid);
+	FILL_TARGET_ULONG_FIELD(ps_runs);
+	FILL_TARGET_ULONG_FIELD(ps_kstack);
+	FILL_TARGET_ULONG_FIELD(ps_need_resched);
+	FILL_TARGET_ULONG_FIELD(ps_parent);
+	FILL_TARGET_ULONG_FIELD(ps_mm);
+	FILL_TARGET_ULONG_FIELD(ps_context);
+	FILL_TARGET_ULONG_FIELD(ps_trapframe);
+	FILL_TARGET_ULONG_FIELD(ps_cr3);
+	FILL_TARGET_ULONG_FIELD(ps_flags);
+	FILL_TARGET_ULONG_FIELD(ps_name);
+    FILL_TARGET_ULONG_FIELD(ps_list_link);
+    FILL_TARGET_ULONG_FIELD(ps_hash_link);
+    FILL_TARGET_ULONG_FIELD(ps_exit_code);
+    FILL_TARGET_ULONG_FIELD(ps_wait_state);
+	FILL_TARGET_ULONG_FIELD(ps_cptr);
+	FILL_TARGET_ULONG_FIELD(ps_yptr);
+	FILL_TARGET_ULONG_FIELD(ps_optr);
+	FILL_TARGET_ULONG_FIELD(ps_run_queue);
+	FILL_TARGET_ULONG_FIELD(ps_run_link);
+	FILL_TARGET_ULONG_FIELD(ps_time_slice);
+	FILL_TARGET_ULONG_FIELD(ps_lab6_run_pool);
+	FILL_TARGET_ULONG_FIELD(ps_lab6_stride);
+	FILL_TARGET_ULONG_FIELD(ps_lab6_priority);
+	FILL_TARGET_ULONG_FIELD(ps_filesp);
 }
 
 // infer init_task_addr, use the init_task_addr to search for the corresponding

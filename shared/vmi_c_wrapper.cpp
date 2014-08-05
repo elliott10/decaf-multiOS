@@ -229,13 +229,19 @@ int VMI_list_processes(Monitor *mon)
 {
 	process *proc;
 	unordered_map<uint32_t, process *>::iterator iter;
-
-	for (iter = process_map.begin(); iter != process_map.end(); iter++) {
+//chy use process_pid_map to list processes
+	for (iter = process_pid_map.begin(); iter != process_pid_map.end(); iter++) {
 		proc = iter->second;
 		monitor_printf(mon, "%d\tcr3=0x%08x\t%s\n", proc->pid, proc->cr3,
 				proc->name);
 	}
-
+#if 0
+	for (iter = process_map.begin(); iter != process_map.end(); iter++) {
+		proc = iter->second;
+		monitor_printf(mon, "%d\tcr3=0x%08x\t%s\n", proc->pid, proc->cr3,
+					   proc->name);
+	}
+#endif
 	return 0;
 }
 

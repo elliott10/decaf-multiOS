@@ -77,7 +77,7 @@ using namespace std::tr1;
 
 // current ucore profile
 static UcoreProcInfo UCORE_OFFSET_PROFILE = {"UCORE_VMI"};
-
+#define uop UCORE_OFFSET_PROFILE
 // _last_task_pid is used for reducing the memory reading process, when we trying to find a new process, the pid should
 // be keeping growing by increment of 1, thus by tracking the pid of the last new process we found, we can speed up the
 // process of finding new process. It is based on the fact that the task list is ordered by pid.
@@ -122,117 +122,70 @@ void ucore_extract_symbols_info(CPUState *env, uint32_t cr3, target_ulong start_
 // process * find_new_process(CPUState *env, uint32_t cr3) __attribute__((optimize("O0")));
 // scan the task list and find new process
 static
-process * ucore_find_new_process(CPUState *env, uint32_t cr3) {
-        return (process *)NULL;
-#if 0
-	uint32_t task_pid = 0, ts_parent_pid = 0, proc_cr3 = -1;
-	const int MAX_LOOP_COUNT = 1024; // maximum loop count when trying to find a new process (will there be any?)
-	process *right_proc = NULL;
-
-	//static target_ulong _last_next_task = 0;// another way to speed up: when the last task remain the same, return immediately
-
-	//uint32_t _last_task_pid = last_task_pid;
-	target_ulong next_task, ts_real_parent, mm, task_pgd;
-	next_task = UCORE_OFFSET_PROFILE.init_task_addr;
-
-	// avoid infinite loop
-	for (int count = MAX_LOOP_COUNT; count > 0; --count)
-	{
-
-		// NOTICE by reading next_task at the beginning, we are skipping the "swapper" task
-		// highly likely ucore add the latest process to the tail of the linked list, so we go backward here
-		BREAK_IF(DECAF_read_ptr(env, 
-			next_task + (OFFSET_PROFILE.ts_tasks + sizeof(target_ptr)),
-			&next_task) < 0);
-
-		// NOTE - tasks is a list_head, so we need to minus offset to get the base address
-		next_task -= OFFSET_PROFILE.ts_tasks;
-/*		if (_last_next_task == next_task
-				|| next_task == OFFSET_PROFILE.init_task_addr) {// we have traversed the whole link list, or no new process
-			break;
-		}*/
-
-		if(OFFSET_PROFILE.init_task_addr == next_task)
-		{
-			break;
-		}
-
-		// read task pid, jump out directly when we fail
-		BREAK_IF(DECAF_read_ptr(env,
-			next_task + OFFSET_PROFILE.ts_tgid,
-			&task_pid) < 0);
-
-		BREAK_IF(DECAF_read_ptr(env,
-			next_task + OFFSET_PROFILE.ts_mm,
-			&mm) < 0);
-
-		// // NOTICE kernel thread does not own a process address space, thus its mm is NULL. It uses active_mm instead
-		// if (populate_mm_struct_offsets(env, mm, &OFFSET_PROFILE))
-		// 	continue;	// try until we get it.
-
-		if (mm != 0)
-		{ 	// for user-processes
-			// we read the value of active_mm into mm here
-			BREAK_IF(DECAF_read_ptr(env,
-					next_task + OFFSET_PROFILE.ts_mm + sizeof(target_ptr),
-					&mm) < 0
-					||
-					DECAF_read_ptr(env,
-					mm + OFFSET_PROFILE.mm_pgd,
-					&task_pgd) < 0);
-
-			proc_cr3 = DECAF_get_phys_addr(env, task_pgd);
-		}
-		else
-		{	// for kernel threads
-			proc_cr3 = -1;// when proc_cr3 is -1UL, we cannot find the process by findProcessByCR3(), but we still can do findProcessByPid()
-		}
-
-		if (!VMI_find_process_by_pgd(proc_cr3)) {
-			// get parent task's base address
-			BREAK_IF(DECAF_read_ptr(env,
-					next_task + OFFSET_PROFILE.ts_real_parent,
-					&ts_real_parent) < 0
-					||
-					DECAF_read_ptr(env,
-					ts_real_parent + OFFSET_PROFILE.ts_tgid,
-					&ts_parent_pid) < 0);
-
-			process* pe = new process();
-			pe->pid = task_pid;
-			pe->parent_pid = ts_parent_pid;
-			pe->cr3 = proc_cr3;
-			pe->EPROC_base_addr = next_task; // store current task_struct's base address
-			BREAK_IF(DECAF_read_mem(env,
-					next_task + OFFSET_PROFILE.ts_comm,
-					SIZEOF_COMM, pe->name) < 0);
-			VMI_create_process(pe);
-
-			//monitor_printf(default_mon, "new proc = %s, pid = %d, parent_pid = %d \n", pe->name, pe->pid, pe->parent_pid);
-			if (cr3 == proc_cr3) {// for kernel thread, we are going to return NULL
-				// NOTICE we may find multiple processes in this function, but we only return the current one
-				right_proc = pe;
-			}
-		}
-	}
-
-	//last_task_pid = _last_task_pid;
+process * ucore_find_new_process(CPUState *env) {
 	
-	return right_proc;
-#endif
-}
-
-// retrive symbols from specific process
-static void ucore_retrive_symbols(CPUState *env, process * proc) {
-	if (!proc || proc->cr3 == -1UL) return;	// unnecessary check
-	for (unordered_map < uint32_t,module * >::iterator it = proc->module_list.begin();
-		it != proc->module_list.end(); it++) {
-		module *cur_mod = it->second;
-		if (!cur_mod->symbols_extracted)
-			ucore_extract_symbols_info(env, proc->cr3, it->first, cur_mod);
+	//int count=0;
+	gva_t proc_list_addr;
+	gva_t list=NULL; 
+	gva_t nextproc_list_link, nextproc_pid,nextproc_cr3; 
+	gva_t mm=NULL; 
+	char nextproc_name[20];
+    const int MAX_LOOP_COUNT = 1024;
+	process *proc;
+	proc_list_addr = UCORE_OFFSET_PROFILE.proc_list;
+	//DECAF_read_mem(env, proc_list_addr, 4, &prev_addr); //prev_list
+ 	//DECAF_read_mem(env, proc_list_addr+4, 4, &nextproc_list_link); //proc_list.next_list
+	//monitor_printf(default_mon, "idleproc kernel thread @ [%08x] \n", UCORE_OFFSET_PROFILE.idleproc);
+#if 0
+	if(initproc_addr!=UCORE_OFFSET_PROFILE.initproc) {
+		monitor_printf(default_mon, "ERROR get proc list prev_addr %08x, next_addr %8x \
+					    initproc_addr %8x, initproc.list_link addr %8x\n", 
+					    prev_addr, next_addr, 
+						UCORE_OFFSET_PROFILE.initproc,
+						UCORE_OFFSET_PROFILE.initproc+UCORE_OFFSET_PROFILE.ps_list_link);
+		return NULL;
 	}
+	monitor_printf(default_mon, "SUCCESS get proc list");
+	return NULL;
+#endif
+    nextproc_list_link=proc_list_addr; //proc_list.next_list
+	// avoid infinite loop
+	for (int count = MAX_LOOP_COUNT; count > 0; --count) {
+		//get proc's list_link
+		BREAK_IF(DECAF_read_mem(env, 
+								nextproc_list_link+4,
+								4,
+								&nextproc_list_link) < 0);
+		if(nextproc_list_link==proc_list_addr)  //finding process finished
+			return NULL;
+		//get proc's pid
+		BREAK_IF(DECAF_read_mem(env, 
+								nextproc_list_link-(uop.ps_list_link-uop.ps_pid),
+								4,
+								&nextproc_pid) < 0);
+		proc=VMI_find_process_by_pid(nextproc_pid);
+		if(proc==NULL) { //new proc
+			//get proc's cr3
+			BREAK_IF(DECAF_read_mem(env, 
+									nextproc_list_link - (uop.ps_list_link-uop.ps_cr3),
+									4,
+									&nextproc_cr3) < 0);
+			//get proc's name
+			BREAK_IF(DECAF_read_mem(env,
+									nextproc_list_link - (uop.ps_list_link-uop.ps_name),
+									16, nextproc_name) < 0);
+			process* pe = new process();
+			pe->pid = nextproc_pid;
+			pe->parent_pid = 0;
+			pe->cr3 = nextproc_cr3;
+			pe->EPROC_base_addr = nextproc_list_link-uop.ps_list_link; // store current task_struct's base address
+			strncpy(pe->name,nextproc_name,16);
+			VMI_create_process(pe);
+			return pe;
+		}
+	}
+    return (process *)NULL;
 }
-
 
 // for every tlb call back, we try finding new processes
 // static
@@ -240,45 +193,7 @@ static void ucore_retrive_symbols(CPUState *env, process * proc) {
 void ucore_tlb_call_back(DECAF_Callback_Params *temp)
 {
 	CPUState *ourenv = temp->tx.env;
-	uint32_t vaddr = temp->tx.vaddr;
-	uint32_t pgd = -1;
-	process *proc = NULL;
-	bool found_new = false;
-	pgd = DECAF_getPGD(ourenv);
-
-
-	//TODO: kernel modules are not retrieved in the current implementation.
-	if (DECAF_is_in_kernel(ourenv)) {
-		//proc = kernel_proc;
-	}
-	else if ( (proc = VMI_find_process_by_pgd(pgd)) == NULL) {
-		found_new = ((proc = ucore_find_new_process(ourenv, pgd)) != NULL);
-	}
-
-	if (proc) {	// we are not scanning modules for kernel threads, since kernel thread's cr3 is -1UL, the proc should be null
-
-		if ( !ucore_is_vm_page_resolved(proc, vaddr) ) {
-			char task_comm[SIZEOF_COMM];
-			if ( !found_new
-				&& !DECAF_read_mem(ourenv, proc->EPROC_base_addr + UCORE_OFFSET_PROFILE.ps_mm, SIZEOF_COMM, task_comm) 
-				&& strncmp(proc->name, task_comm, SIZEOF_COMM) ) {
-					strcpy(proc->name, task_comm);
-					//message_p(proc, '^');
-			}
-
-			//get_new_modules(ourenv, proc);
-
-			//If this page still cannot be resolved, we give up.
-			if (!ucore_is_vm_page_resolved(proc, vaddr)) {
-				int attempts = ucore_unresolved_attempt(proc, vaddr);
-				if (attempts > 200)
-					proc->resolved_pages.insert(vaddr>>12);
-			}
-		}
-
-		// retrieve symbol information here
-		//retrive_symbols(env, proc);
-	}
+	process *proc = ucore_find_new_process(ourenv);
 }
 
 // here we scan the task list in guest OS and sync ours with it
@@ -339,8 +254,16 @@ int find_ucore(CPUState *env, uintptr_t insn_handle) {
 		return 0;
 	}
 	
-	monitor_printf(default_mon, "idleproc kernel thread @ [%08x] \n", UCORE_OFFSET_PROFILE.idleproc);
-
+	monitor_printf(default_mon, "idleproc kernel thread @ 0x%08x \n", UCORE_OFFSET_PROFILE.idleproc);
+    monitor_printf(default_mon, "initproc kernel thread @ 0x%08x \n", UCORE_OFFSET_PROFILE.initproc);
+	monitor_printf(default_mon, "proc_list @ [%08x] \n", UCORE_OFFSET_PROFILE.proc_list);
+	monitor_printf(default_mon, "sizeof_proc_struct @ %d \n", UCORE_OFFSET_PROFILE.sizeof_proc_struct);
+    monitor_printf(default_mon, "ps field offset: list_link@ %d \n", UCORE_OFFSET_PROFILE.ps_list_link);
+    monitor_printf(default_mon, "ps field offset: pid @ %d \n", UCORE_OFFSET_PROFILE.ps_pid);
+    monitor_printf(default_mon, "ps field offset: mm @ %d \n", UCORE_OFFSET_PROFILE.ps_mm);
+    monitor_printf(default_mon, "ps field offset: name @ %d \n", UCORE_OFFSET_PROFILE.ps_name);
+	monitor_printf(default_mon, "ps field offset: cr3 @ %d \n", UCORE_OFFSET_PROFILE.ps_cr3);
+	 
 	VMI_guest_kernel_base = 0xc0000000;
 
 	return (1);
@@ -354,9 +277,9 @@ void ucore_vmi_init()
 
 	DECAF_register_callback(DECAF_TLB_EXEC_CB, ucore_tlb_call_back, NULL);
 
-	recon_timer = qemu_new_timer_ns(vm_clock, ucore_check_procexit, 0);
-	qemu_mod_timer(recon_timer,
-				   qemu_get_clock_ns(vm_clock) + get_ticks_per_sec() * 20);
+	//recon_timer = qemu_new_timer_ns(vm_clock, ucore_check_procexit, 0);
+	//qemu_mod_timer(recon_timer,
+	//			   qemu_get_clock_ns(vm_clock) + get_ticks_per_sec() * 20);
 
 }
 
