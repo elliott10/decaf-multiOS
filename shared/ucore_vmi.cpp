@@ -132,17 +132,17 @@ process * ucore_find_new_process(CPUState *env) {
 	char nextproc_name[20];
     const int MAX_LOOP_COUNT = 1024;
 	process *proc;
-	proc_list_addr = UCORE_OFFSET_PROFILE.proc_list;
+	proc_list_addr = uop.proc_list;
 	//DECAF_read_mem(env, proc_list_addr, 4, &prev_addr); //prev_list
  	//DECAF_read_mem(env, proc_list_addr+4, 4, &nextproc_list_link); //proc_list.next_list
-	//monitor_printf(default_mon, "idleproc kernel thread @ [%08x] \n", UCORE_OFFSET_PROFILE.idleproc);
+	//monitor_printf(default_mon, "idleproc kernel thread @ [%08x] \n", uop.idleproc);
 #if 0
-	if(initproc_addr!=UCORE_OFFSET_PROFILE.initproc) {
+	if(initproc_addr!=uop.initproc) {
 		monitor_printf(default_mon, "ERROR get proc list prev_addr %08x, next_addr %8x \
 					    initproc_addr %8x, initproc.list_link addr %8x\n", 
 					    prev_addr, next_addr, 
-						UCORE_OFFSET_PROFILE.initproc,
-						UCORE_OFFSET_PROFILE.initproc+UCORE_OFFSET_PROFILE.ps_list_link);
+						uop.initproc,
+						uop.initproc+uop.ps_list_link);
 		return NULL;
 	}
 	monitor_printf(default_mon, "SUCCESS get proc list");
@@ -203,7 +203,7 @@ static void ucore_check_procexit(void *) {
 	qemu_mod_timer(recon_timer,
 				   qemu_get_clock_ns(vm_clock) + get_ticks_per_sec() * 10);
 
-	target_ulong next_task = UCORE_OFFSET_PROFILE.initproc;
+	target_ulong next_task = uop.initproc;
 	set<target_ulong> live_pids;
 	set<target_ulong> vmi_pids;
 	set<target_ulong> dead_pids;
@@ -214,16 +214,16 @@ static void ucore_check_procexit(void *) {
 	{
 		target_ulong task_pid;
 		BREAK_IF(DECAF_read_ptr(env,
-			next_task + UCORE_OFFSET_PROFILE.ps_pid, 
+			next_task + uop.ps_pid, 
 			&task_pid) < 0);
 		live_pids.insert(task_pid);
 
 		BREAK_IF(DECAF_read_ptr(env,
-			next_task + UCORE_OFFSET_PROFILE.ps_list_link + sizeof(target_ptr),
+			next_task + uop.ps_list_link + sizeof(target_ptr),
 			&next_task) < 0);
 
-		next_task -= UCORE_OFFSET_PROFILE.ps_list_link;
-		if (next_task == UCORE_OFFSET_PROFILE.initproc)
+		next_task -= uop.ps_list_link;
+		if (next_task == uop.initproc)
 		{
 			break;
 		}
@@ -248,25 +248,23 @@ static void ucore_check_procexit(void *) {
 // to see whether this is a ucore or not,
 // the trick is to check the init_thread_info, init_task
 int find_ucore(CPUState *env, uintptr_t insn_handle) {
-
-	if(0 != ucore_load_proc_info(env, UCORE_OFFSET_PROFILE))
-	{
-		return 0;
-	}
+    if(0 != ucore_load_proc_info(env, uop)){
+	return 0;
+    }
 	
-	monitor_printf(default_mon, "idleproc kernel thread @ 0x%08x \n", UCORE_OFFSET_PROFILE.idleproc);
-    monitor_printf(default_mon, "initproc kernel thread @ 0x%08x \n", UCORE_OFFSET_PROFILE.initproc);
-	monitor_printf(default_mon, "proc_list @ [%08x] \n", UCORE_OFFSET_PROFILE.proc_list);
-	monitor_printf(default_mon, "sizeof_proc_struct @ %d \n", UCORE_OFFSET_PROFILE.sizeof_proc_struct);
-    monitor_printf(default_mon, "ps field offset: list_link@ %d \n", UCORE_OFFSET_PROFILE.ps_list_link);
-    monitor_printf(default_mon, "ps field offset: pid @ %d \n", UCORE_OFFSET_PROFILE.ps_pid);
-    monitor_printf(default_mon, "ps field offset: mm @ %d \n", UCORE_OFFSET_PROFILE.ps_mm);
-    monitor_printf(default_mon, "ps field offset: name @ %d \n", UCORE_OFFSET_PROFILE.ps_name);
-	monitor_printf(default_mon, "ps field offset: cr3 @ %d \n", UCORE_OFFSET_PROFILE.ps_cr3);
+    monitor_printf(default_mon, "idleproc kernel thread @ 0x%08x \n", uop.idleproc);
+    monitor_printf(default_mon, "initproc kernel thread @ 0x%08x \n", uop.initproc);
+    monitor_printf(default_mon, "proc_list @ [%08x] \n", uop.proc_list);
+    monitor_printf(default_mon, "sizeof_proc_struct @ %d \n", uop.sizeof_proc_struct);
+    monitor_printf(default_mon, "ps field offset: list_link@ %d \n", uop.ps_list_link);
+    monitor_printf(default_mon, "ps field offset: pid @ %d \n", uop.ps_pid);
+    monitor_printf(default_mon, "ps field offset: mm @ %d \n", uop.ps_mm);
+    monitor_printf(default_mon, "ps field offset: name @ %d \n", uop.ps_name);
+    monitor_printf(default_mon, "ps field offset: cr3 @ %d \n", uop.ps_cr3);
 	 
-	VMI_guest_kernel_base = 0xc0000000;
+    VMI_guest_kernel_base = 0xc0000000;
 
-	return (1);
+    return (1);
 }
 
 
