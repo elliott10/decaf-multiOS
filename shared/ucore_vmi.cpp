@@ -90,7 +90,7 @@ static UcoreProcInfo UCORE_OFFSET_PROFILE = {"UCORE_VMI"};
 /* Timer to check for proc exits */
 static QEMUTimer *recon_timer = NULL;
 
-
+int enable_show_ucore_proc=1;
 
 // query if one vm page is resolved
 static inline bool ucore_is_vm_page_resolved(process *proc, uint32_t addr)
@@ -181,8 +181,27 @@ process * ucore_find_new_process(CPUState *env) {
 			pe->EPROC_base_addr = nextproc_list_link-uop.ps_list_link; // store current task_struct's base address
 			strncpy(pe->name,nextproc_name,16);
 			VMI_create_process(pe);
+
+                        if(enable_show_ucore_proc) 
+                          monitor_printf(default_mon, "forked proc pid %d name %s, cr3 %x\n",pe->pid,pe->name, pe->cr3);
+
 			return pe;
-		}
+		} 
+                else {
+			//get proc's name
+			BREAK_IF(DECAF_read_mem(env,
+									nextproc_list_link - (uop.ps_list_link-uop.ps_name),
+									16, nextproc_name) < 0);
+                        if( strncmp(proc->name,nextproc_name,16) != 0 ) {
+                          //do_execv may processed, the proc->name should be changed.
+			  strncpy(proc->name,nextproc_name,16);
+                          if(enable_show_ucore_proc) 
+                            monitor_printf(default_mon, "do_execved proc pid %d name %s, cr3 %x\n",proc->pid,proc->name, proc->cr3);
+                        }
+                        return NULL;
+                }
+
+                  
 	}
     return (process *)NULL;
 }
@@ -201,10 +220,11 @@ static void ucore_check_procexit(void *) {
         /* AWH - cpu_single_env is invalid outside of the main exec thread */
 	CPUState *env = /* AWH cpu_single_env ? cpu_single_env :*/ first_cpu;
 	qemu_mod_timer(recon_timer,
-				   qemu_get_clock_ns(vm_clock) + get_ticks_per_sec() * 10);
+				   qemu_get_clock_ns(vm_clock) + get_ticks_per_sec() * 5);
 
-	target_ulong next_task = uop.initproc;
-	set<target_ulong> live_pids;
+        target_ulong next_proc = uop.proc_list;
+	target_ulong proc_list_addr = next_proc;
+        set<target_ulong> live_pids;
 	set<target_ulong> vmi_pids;
 	set<target_ulong> dead_pids;
 
@@ -212,21 +232,15 @@ static void ucore_check_procexit(void *) {
 
 	for(int i=0; i<MAX_LOOP_COUNT; i++)
 	{
-		target_ulong task_pid;
-		BREAK_IF(DECAF_read_ptr(env,
-			next_task + uop.ps_pid, 
-			&task_pid) < 0);
-		live_pids.insert(task_pid);
-
-		BREAK_IF(DECAF_read_ptr(env,
-			next_task + uop.ps_list_link + sizeof(target_ptr),
-			&next_task) < 0);
-
-		next_task -= uop.ps_list_link;
-		if (next_task == uop.initproc)
-		{
+                target_ulong proc_pid;
+		//get proc's list_link
+		BREAK_IF(DECAF_read_mem(env, next_proc + 4, 4, &next_proc) < 0);
+		if(next_proc == proc_list_addr)  //finding process finished
 			break;
-		}
+		//get proc's pid
+		BREAK_IF(DECAF_read_mem(env, next_proc-(uop.ps_list_link-uop.ps_pid), 4, &proc_pid) < 0);
+
+		live_pids.insert(proc_pid);
 	}
 
 	unordered_map<uint32_t, process *>::iterator iter = process_pid_map.begin();
@@ -241,7 +255,22 @@ static void ucore_check_procexit(void *) {
 	set<target_ulong>::iterator iter2;
 	for(iter2 = dead_pids.begin(); iter2 != dead_pids.end(); iter2++)
 	{
-		VMI_remove_process(*iter2);
+          target_ulong pid;
+          pid=*iter2;
+
+	  process *proc;
+          unordered_map < uint32_t, process * >::iterator iter =
+    	  process_pid_map.find(pid);
+
+          if(iter == process_pid_map.end())
+    	     continue;
+
+          proc = iter->second;
+
+          if(enable_show_ucore_proc) 
+               monitor_printf(default_mon, "exited proc pid %d name %s, cr3 %x\n",proc->pid,proc->name, proc->cr3);
+
+	  VMI_remove_process(*iter2);
 	}
 }
 
@@ -275,9 +304,9 @@ void ucore_vmi_init()
 
 	DECAF_register_callback(DECAF_TLB_EXEC_CB, ucore_tlb_call_back, NULL);
 
-	//recon_timer = qemu_new_timer_ns(vm_clock, ucore_check_procexit, 0);
-	//qemu_mod_timer(recon_timer,
-	//			   qemu_get_clock_ns(vm_clock) + get_ticks_per_sec() * 20);
+	recon_timer = qemu_new_timer_ns(vm_clock, ucore_check_procexit, 0);
+	qemu_mod_timer(recon_timer,
+				   qemu_get_clock_ns(vm_clock) + get_ticks_per_sec() * 10);
 
 }
 
