@@ -58,17 +58,27 @@ target_ulong funcmap_get_pc(const char *module_name, const char *function_name, 
 {
 	target_ulong base;
 	module *mod = VMI_find_module_by_name(module_name, cr3, &base);
-	if(!mod)
+	if(!mod) {
+		monitor_printf(default_mon, "funcmap_get_pc: 1 can not find mod %s, cr3=0x%x in \n",module_name, cr3);
 		return 0;
+	}
 
 	map<string, map<string, uint32_t> >::iterator iter = map_function_offset.find(module_name);
-	if(iter == map_function_offset.end())
+	if(iter == map_function_offset.end()) {
+	    monitor_printf(default_mon, "funcmap_get_pc: 2 can not find mod %s in map_function_offset\n",module_name);
+		monitor_printf(default_mon, "   map_function_offset:size %d\n",map_function_offset.size());
+		map<string, map<string, uint32_t> >::iterator iter3 = map_function_offset.begin();
+		while(iter3!=map_function_offset.end())
+			monitor_printf(default_mon, "   map_function_offset:mod %s\n",iter3->first.c_str());
+		
 		return 0;
-
+	}
 	map<string, uint32_t>::iterator iter2 = iter->second.find(function_name);
-	if(iter2 == iter->second.end())
+	if(iter2 == iter->second.end()) {
+		monitor_printf(default_mon, "funcmap_get_pc: 3 can not find func %s, mod %s in map_function_offset\n",function_name, module_name);
+		
 		return 0;
-
+	}
 	return iter2->second + base;
 }
 
@@ -136,8 +146,10 @@ void funcmap_insert_function(const char *module, const char *fname, uint32_t off
 		map<string, uint32_t> func_offset;
 		func_offset[fname] = offset;
 		map_function_offset[module] = func_offset;
+		monitor_printf(default_mon, "1: map_funtion_offset size %d\n",map_function_offset.size());
 	} else {
 		iter->second.insert(pair<string, uint32_t>(string(fname), offset));
+		monitor_printf(default_mon, "2: map_funtion_offset size %d\n",map_function_offset.size());
 	}
 
 	map<string, map<uint32_t, string> >::iterator iter2 = map_offset_function.find(module);
@@ -145,9 +157,10 @@ void funcmap_insert_function(const char *module, const char *fname, uint32_t off
 		map<uint32_t, string> offset_func;
 		offset_func[offset] = fname;
 		map_offset_function[module] = offset_func;
+		monitor_printf(default_mon, "3: map_funtion_offset size %d\n",map_function_offset.size());
 	} else
 		iter2->second.insert(pair<uint32_t, string>(offset, fname));
-
+        monitor_printf(default_mon, "4: map_funtion_offset size %d\n",map_function_offset.size());
 }
 
 static void function_map_save(QEMUFile * f, void *opaque)

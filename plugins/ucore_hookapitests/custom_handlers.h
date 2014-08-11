@@ -20,18 +20,7 @@ http://code.google.com/p/decaf-platform/
 #include "qemu-objects.h"
 #include "vmi_c_wrapper.h" //for find_pid();
 
-
-
-void NtCreateFile_ret_handler (void *opaque);
-
-
-
-
-/*
- * NTSTATUS values
- */
-#define STATUS_SUCCESS			0x00000000
-
+void hello_ret_handler (void *opaque);
 
 #endif /* CUSTOM_HANDLERS_H_ */
 

@@ -178,25 +178,35 @@ process * ucore_find_new_process(CPUState *env) {
 			pe->pid = nextproc_pid;
 			pe->parent_pid = 0;
 			pe->cr3 = nextproc_cr3;
-			pe->EPROC_base_addr = nextproc_list_link-uop.ps_list_link; // store current task_struct's base address
+			pe->EPROC_base_addr = nextproc_list_link-uop.ps_list_link; // store current proc_struct's base address
 			strncpy(pe->name,nextproc_name,16);
 			VMI_create_process(pe);
 
                         if(enable_show_ucore_proc) 
-                          monitor_printf(default_mon, "forked proc pid %d name %s, cr3 %x\n",pe->pid,pe->name, pe->cr3);
+                          monitor_printf(default_mon, "ucore_find_new_process: forked proc pid %d name %s, cr3 %x\n",pe->pid,pe->name, pe->cr3);
 
 			return pe;
 		} 
                 else {
-			//get proc's name
+			//now should be the exec proc.  Get proc's name 
 			BREAK_IF(DECAF_read_mem(env,
 									nextproc_list_link - (uop.ps_list_link-uop.ps_name),
 									16, nextproc_name) < 0);
                         if( strncmp(proc->name,nextproc_name,16) != 0 ) {
                           //do_execv may processed, the proc->name should be changed.
-			  strncpy(proc->name,nextproc_name,16);
+						  strncpy(proc->name,nextproc_name,16);
+						  //delelte proc  and re-add pe in VMI_create_process
+						  process* pe = new process();
+						  pe->pid = proc->pid;
+						  pe->parent_pid = 0;
+						  pe->cr3 = proc->cr3;
+						  pe->EPROC_base_addr = proc->EPROC_base_addr; 		
+						  strncpy(pe->name,proc->name,16);
+						  VMI_create_process(pe);
+						  
                           if(enable_show_ucore_proc) 
-                            monitor_printf(default_mon, "do_execved proc pid %d name %s, cr3 %x\n",proc->pid,proc->name, proc->cr3);
+                            monitor_printf(default_mon, "ucore_find_new_process: do_execved proc pid %d name %s, cr3 %x\n",pe->pid,pe->name, pe->cr3);
+						  return pe;
                         }
                         return NULL;
                 }
@@ -206,6 +216,39 @@ process * ucore_find_new_process(CPUState *env) {
     return (process *)NULL;
 }
 
+
+// get new module, basically reading from mm_struct
+static void ucore_get_new_modules(CPUState* env, process * proc)
+{
+	target_ulong ts_mm, mm_mmap, vma_file, vma_next, f_dentry;
+	const int MAX_LOOP_COUNT = 1024;	// prevent infinite loop
+	target_ulong vma_vm_start = 0, vma_vm_end = 0, vma_vm_flags, vma_vm_pgoff;
+	target_ulong last_vm_start = 0, last_vm_end = 0;
+	char name[32], key[128];	// module file path
+	string last_mod_name, mod_name;
+	target_ulong mod_vm_start, mod_vm_end;
+	module* mod = NULL;
+	string _name;
+	set<uint32_t> module_bases;
+	bool finished_traversal = false;
+	int mod_stage = 0;
+	bool three_sections_found = false;
+	static int offset_populated = 0, dentry_offset_populated = 0;
+	const int VM_FLAGS_NONE = 0;
+    mod_vm_start=0;
+	mod = VMI_find_module_by_key(proc->name);
+	if (!mod) {
+		mod = new module();
+		strncpy(mod->name, proc->name, 16);
+		mod->name[31] = '\0';
+		mod->size = 4096;
+		VMI_add_module(mod, mod->name);
+	}
+    VMI_insert_module(proc->pid, mod_vm_start, mod);
+	monitor_printf(default_mon, "ucore add module %s\n", mod->name);
+
+	return;
+}
 // for every tlb call back, we try finding new processes
 // static
 // void ucore_tlb_call_back(DECAF_Callback_Params *temp) __attribute__((optimize("O0")));
@@ -213,6 +256,9 @@ void ucore_tlb_call_back(DECAF_Callback_Params *temp)
 {
 	CPUState *ourenv = temp->tx.env;
 	process *proc = ucore_find_new_process(ourenv);
+	if(proc) { //fork or exec
+		ucore_get_new_modules(ourenv, proc);
+	}
 }
 
 // here we scan the task list in guest OS and sync ours with it

@@ -290,7 +290,8 @@ int VMI_create_process(process *proc)
     	VMI_remove_process(iter2->second->pid);
     }
 #endif
-	
+//chy first fork the child process, then exec on new prog in the same child process
+//so even we remove process using VMI_remove_process, we still need add it again	
    	process_pid_map[proc->pid] = proc;
    	process_map[proc->cr3] = proc;
 

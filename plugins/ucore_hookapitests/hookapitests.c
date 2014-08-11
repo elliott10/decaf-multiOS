@@ -31,8 +31,7 @@ static plugin_interface_t hookapitests_interface;
 static DECAF_Handle processbegin_handle = DECAF_NULL_HANDLE;
 static DECAF_Handle removeproc_handle = DECAF_NULL_HANDLE;
 static DECAF_Handle blockbegin_handle = DECAF_NULL_HANDLE;
-static DECAF_Handle ntcreatefile_handle = DECAF_NULL_HANDLE;
-static DECAF_Handle VirtualAlloc_handle = DECAF_NULL_HANDLE;
+static DECAF_Handle hello_handle = DECAF_NULL_HANDLE;
 
 static char targetname[512];
 static uint32_t targetpid = -1;
@@ -56,12 +55,12 @@ static void hook_all(DECAF_Callback_Params* param) {
 typedef struct {
 	uint32_t call_stack[12]; //paramters and return address
 	DECAF_Handle hook_handle;
-} NtCreateFile_hook_context_t;
+} hello_hook_context_t;
 
-static void NtCreateFile_ret(void *param)
+static void hello_ret(void *param)
 {
-	NtCreateFile_hook_context_t *ctx = (NtCreateFile_hook_context_t *)param;
-	DECAF_printf("NtCreateFile exit:");
+	hello_hook_context_t *ctx = (hello_hook_context_t *)param;
+	DECAF_printf("hello::print_me exit\n");
 
 	hookapi_remove_hook(ctx->hook_handle);
 	uint32_t out_handle;
@@ -71,55 +70,25 @@ static void NtCreateFile_ret(void *param)
 	free(ctx);
 }
 
-static void NtCreateFile_call(void *opaque)
+static void hello_call(void *opaque)
 {
-	DECAF_printf("NtCreateFile entry\n");
-	NtCreateFile_hook_context_t *ctx = (NtCreateFile_hook_context_t*)
-			malloc(sizeof(NtCreateFile_hook_context_t));
+	DECAF_printf("hello::print_me entry\n");
+	hello_hook_context_t *ctx = (hello_hook_context_t*)
+			malloc(sizeof(hello_hook_context_t));
 	if(!ctx) //run out of memory
 		return;
-
+    //chy need change!!!
 	DECAF_read_mem(NULL, cpu_single_env->regs[R_ESP], 12*4, ctx->call_stack);
 	ctx->hook_handle = hookapi_hook_return(ctx->call_stack[0],
-			NtCreateFile_ret, ctx, sizeof(*ctx));
+			hello_ret, ctx, sizeof(*ctx));
 }
 
-static void VirtualAlloc_ret(void *param)
-{
-	NtCreateFile_hook_context_t *ctx = (NtCreateFile_hook_context_t *)param;
-	DECAF_printf("NtCreateFile exit:");
-
-	hookapi_remove_hook(ctx->hook_handle);
-	DECAF_printf("lpAddress=%08x, dwSize=%d, ret=%08x\n", ctx->call_stack[1], 
-		ctx->call_stack[2], cpu_single_env->regs[R_EAX]);
-
-	free(ctx);
-
-}
-
-static void VirtualAlloc_call(void *opaque)
-{
-	DECAF_printf("VirtualAlloc entry\n");
-	NtCreateFile_hook_context_t *ctx = (NtCreateFile_hook_context_t*)
-			malloc(sizeof(NtCreateFile_hook_context_t));
-	if(!ctx) //run out of memory
-		return;
-
-	DECAF_read_mem(NULL, cpu_single_env->regs[R_ESP], 12*4, ctx->call_stack);
-	ctx->hook_handle = hookapi_hook_return(ctx->call_stack[0],
-			VirtualAlloc_ret, ctx, sizeof(*ctx));
-}
 
 static void register_hooks()
 {
-	ntcreatefile_handle = hookapi_hook_function_byname(
-			"ntdll.dll", "NtCreateFile", 1, targetcr3,
-			NtCreateFile_call, NULL, 0);
-
-	VirtualAlloc_handle = hookapi_hook_function_byname(
-			"kernel32.dll", "VirtualAlloc", 1, targetcr3,
-			VirtualAlloc_call, NULL, 0);
-
+	hello_handle = hookapi_hook_function_byname(
+			"hello", "print_me", 1, targetcr3,
+			hello_call, NULL, 0);
 }
 
 
@@ -152,11 +121,21 @@ static void do_hookapitests(Monitor* mon, const QDict* qdict)
 	targetname[511] = '\0';
 }
 
+static void ucore_parse_function(void)
+{
+   char * module="hello";
+   char * fname="print_me";
+   target_ulong offset=0x8017c8;
+   DECAF_printf("ucore_parse_function: insert function\n");
+   funcmap_insert_function(module, fname, offset);
+}
+
 
 static int hookapitests_init(void)
 {
 	DECAF_output_init(NULL);
-	DECAF_printf("Hello World\n");
+	DECAF_printf("ucore_hookapitest_init: Hello World\n");
+	ucore_parse_function();
 	//register for process create and process remove events
 	processbegin_handle = VMI_register_callback(VMI_CREATEPROC_CB,
 			&createproc_callback, NULL);
@@ -200,7 +179,7 @@ static mon_cmd_t hookapitests_term_cmds[] = {
 plugin_interface_t* init_plugin(void) {
 	hookapitests_interface.mon_cmds = hookapitests_term_cmds;
 	hookapitests_interface.plugin_cleanup = &hookapitests_cleanup;
-
+    
 	//initialize the plugin
 	hookapitests_init();
 	return (&hookapitests_interface);

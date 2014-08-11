@@ -897,7 +897,7 @@ void Linux_tlb_call_back(DECAF_Callback_Params *temp)
 		}
 
 		// retrieve symbol information here
-		//retrive_symbols(env, proc);
+		retrive_symbols(ourenv, proc);
 	}
 }
 
