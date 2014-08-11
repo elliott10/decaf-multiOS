@@ -49,12 +49,12 @@ void check_call(DECAF_Callback_Params *param)
 {
 	CPUState *env=param->be.env;
 	//chy
-	DECAF_printf("check_call begin\n");
+	//DECAF_printf("check_call begin\n");
 	if(env == NULL)
 	return;
 	target_ulong pc = param->be.next_pc;
 	target_ulong cr3 = DECAF_getPGD(env) ;
-	DECAF_printf("check_call step 1\n");
+	//DECAF_printf("check_call step 1\n");
 	if(stack_top == MAX_STACK_SIZE)
 	{
      //if the stack reaches to the max size, we ignore the data from stack bottom to MAX_STACK_SIZE/10
@@ -66,25 +66,25 @@ void check_call(DECAF_Callback_Params *param)
 		return;
 	}
 	//DECAF_printf("check_call step 2\n");
-	DECAF_printf("check_call step 2 pc 0x%x, cr3 0x%x\n",pc,cr3);
+	//DECAF_printf("check_call step 2 pc 0x%x, cr3 0x%x\n",pc,cr3);
 	if(funcmap_get_name_c(pc, cr3, modname_t, func_name_t))
 	{
-		DECAF_printf("check_call step 2.1, pc 0x%x, cr3 0x%x, mod %s, func %s\n",pc,cr3,modname_t, func_name_t);
+		//DECAF_printf("check_call step 2.1, pc 0x%x, cr3 0x%x, mod %s, func %s\n",pc,cr3,modname_t, func_name_t);
 		DECAF_read_mem(env,env->regs[R_ESP],4,&sys_call_ret_stack[stack_top]);
-		DECAF_printf("check_call step 2.2\n");
+		//DECAF_printf("check_call step 2.2\n");
 		sys_call_entry_stack[stack_top] = pc;
-		DECAF_printf("check_call step 2.3\n");
+		//DECAF_printf("check_call step 2.3\n");
 		cr3_stack[stack_top] = cr3;
-		DECAF_printf("check_call step 2.4\n");
+		//DECAF_printf("check_call step 2.4\n");
 		stack_top++;
-		DECAF_printf("check_call step 2.5\n");
+		//DECAF_printf("check_call step 2.5\n");
 	}
-	DECAF_printf("check_call end\n");
+	//DECAF_printf("check_call end\n");
 }
 void check_ret(DECAF_Callback_Params *param)
 {
 	//chy
-	DECAF_printf("check_ret begin\n");
+	//DECAF_printf("check_ret begin\n");
 	if(!stack_top)
 		return;
 	if(param->be.next_pc == sys_call_ret_stack[stack_top-1])
@@ -137,7 +137,7 @@ void do_read_taint_mem(DECAF_Callback_Params *param)
 	char name[128];
 	tmodinfo_t dm;// (tmodinfo_t *) malloc(sizeof(tmodinfo_t));
 	//chy
-	DECAF_printf("do_write_taint_mem begin\n");
+	DECAF_printf("do_read_taint_mem begin\n");
 	if(VMI_locate_module_c(eip,cr3, name, &dm) == -1 && !keylogger_log)
 	{
 		DECAF_printf("\n dm is null 0x%08x  \n",cr3);

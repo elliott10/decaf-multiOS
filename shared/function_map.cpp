@@ -86,10 +86,10 @@ target_ulong funcmap_get_pc(const char *module_name, const char *function_name, 
 int funcmap_get_name(target_ulong pc, target_ulong cr3, string &mod_name, string &func_name)
 {
 	target_ulong base;
-	monitor_printf(default_mon, "funcmap_get_name begin: pc 0x%x, cr3 0x%x\n",pc,cr3);
+	//monitor_printf(default_mon, "funcmap_get_name begin: pc 0x%x, cr3 0x%x\n",pc,cr3);
 	module *mod = VMI_find_module_by_pc(pc, cr3, &base);
 	if(!mod) {
-		monitor_printf(default_mon, "funcmap_get_name: 1 can not find mod by pc 0x%x, cr3 0x%x\n",pc,cr3);
+		//monitor_printf(default_mon, "funcmap_get_name: 1 can not find mod by pc 0x%x, cr3 0x%x\n",pc,cr3);
 		return -1;
     }
 	map<string, map<uint32_t, string> >::iterator iter = map_offset_function.find(mod->name);
@@ -112,7 +112,7 @@ int funcmap_get_name(target_ulong pc, target_ulong cr3, string &mod_name, string
 int funcmap_get_name_c(target_ulong pc, target_ulong cr3, char *mod_name, char *func_name)
 {
 	string mod, func;
-	monitor_printf(default_mon, "funcmap_get_name_c begin, pc 0x%x, cr3 0x%x\n", pc, cr3	); 
+	//monitor_printf(default_mon, "funcmap_get_name_c begin, pc 0x%x, cr3 0x%x\n", pc, cr3	); 
 	int ret = funcmap_get_name(pc, cr3, mod, func);
 	if(ret == 0) {
 		//we assume the caller has allocated enough space for mod_name and func_name

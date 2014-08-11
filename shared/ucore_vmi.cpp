@@ -142,7 +142,7 @@ static void ucore_get_new_modules(CPUState* env, process * proc)
 		mod = new module();
 		strncpy(mod->name, proc->name, 16);
 		mod->name[31] = '\0';
-		mod->size = 4096;
+		mod->size = 0x803000;
 		VMI_add_module(mod, mod->name);
 	}
     VMI_insert_module(proc->pid, mod_vm_start, mod);
@@ -217,7 +217,7 @@ process * ucore_find_new_process(CPUState *env) {
     nextproc_list_link=proc_list_addr; //proc_list.next_list
 
 	
-	//chy try find ucore idleproc
+	//chy try find ucore idleproc. This method is not very good.
 	ucore_find_idleproc(env);
 	// avoid infinite loop
 	for (int count = MAX_LOOP_COUNT; count > 0; --count) {
@@ -362,9 +362,11 @@ static void ucore_check_procexit(void *) {
 static void ucore_parse_function(void)
 {
 	char * module="hello";
-	char * fname[]={"print_me","myreadline"};
-	target_ulong offset[]={0x8017d0,0x8018d0};
-	int i, size=2;
+	char * fname[]={"print_me","myreadline","fprintf","vfprintf","vprintfmt","fputch","write",
+					 "sys_write","strncpy","read","sys_read","syscall"};
+	target_ulong offset[]={0x8017d0,0x8018d0,0x8008b3,0x800879,0x801191,0x800844,0x8005e6,
+	                       0x8002aa,0x800b8a,0x8005c5,0x800281,0x8000b8};
+	int i, size=12;
 	 monitor_printf(default_mon, "ucore_parse_function: insert functions\n");
 	for (i=0;i<size;i++){
 	    funcmap_insert_function(module, fname[i], offset[i]);
