@@ -121,21 +121,13 @@ static void do_hookapitests(Monitor* mon, const QDict* qdict)
 	targetname[511] = '\0';
 }
 
-static void ucore_parse_function(void)
-{
-   char * module="hello";
-   char * fname="print_me";
-   target_ulong offset=0x8017c8;
-   DECAF_printf("ucore_parse_function: insert function\n");
-   funcmap_insert_function(module, fname, offset);
-}
+
 
 
 static int hookapitests_init(void)
 {
 	DECAF_output_init(NULL);
 	DECAF_printf("ucore_hookapitest_init: Hello World\n");
-	ucore_parse_function();
 	//register for process create and process remove events
 	processbegin_handle = VMI_register_callback(VMI_CREATEPROC_CB,
 			&createproc_callback, NULL);

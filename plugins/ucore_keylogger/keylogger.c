@@ -48,11 +48,13 @@ uint32_t stack_top = 0;
 void check_call(DECAF_Callback_Params *param)
 {
 	CPUState *env=param->be.env;
+	//chy
+	DECAF_printf("check_call begin\n");
 	if(env == NULL)
 	return;
 	target_ulong pc = param->be.next_pc;
 	target_ulong cr3 = DECAF_getPGD(env) ;
-
+	DECAF_printf("check_call step 1\n");
 	if(stack_top == MAX_STACK_SIZE)
 	{
      //if the stack reaches to the max size, we ignore the data from stack bottom to MAX_STACK_SIZE/10
@@ -60,22 +62,29 @@ void check_call(DECAF_Callback_Params *param)
 		memcpy(sys_call_entry_stack,&sys_call_entry_stack[MAX_STACK_SIZE/10],MAX_STACK_SIZE-MAX_STACK_SIZE/10);
 		memcpy(cr3_stack,&cr3_stack[MAX_STACK_SIZE/10],MAX_STACK_SIZE-MAX_STACK_SIZE/10);
 		stack_top = MAX_STACK_SIZE-MAX_STACK_SIZE/10;
+	    DECAF_printf("check_call step 1.5\n");
 		return;
 	}
+	//DECAF_printf("check_call step 2\n");
+	DECAF_printf("check_call step 2 pc 0x%x, cr3 0x%x\n",pc,cr3);
 	if(funcmap_get_name_c(pc, cr3, modname_t, func_name_t))
 	{
+		DECAF_printf("check_call step 2.1, pc 0x%x, cr3 0x%x, mod %s, func %s\n",pc,cr3,modname_t, func_name_t);
 		DECAF_read_mem(env,env->regs[R_ESP],4,&sys_call_ret_stack[stack_top]);
+		DECAF_printf("check_call step 2.2\n");
 		sys_call_entry_stack[stack_top] = pc;
+		DECAF_printf("check_call step 2.3\n");
 		cr3_stack[stack_top] = cr3;
+		DECAF_printf("check_call step 2.4\n");
 		stack_top++;
-
+		DECAF_printf("check_call step 2.5\n");
 	}
-
-
-
+	DECAF_printf("check_call end\n");
 }
 void check_ret(DECAF_Callback_Params *param)
 {
+	//chy
+	DECAF_printf("check_ret begin\n");
 	if(!stack_top)
 		return;
 	if(param->be.next_pc == sys_call_ret_stack[stack_top-1])
@@ -88,6 +97,8 @@ void do_block_end_cb(DECAF_Callback_Params *param)
 	unsigned char insn_buf[2];
 	int is_call = 0, is_ret = 0;
 	int b;
+	//chy
+	//DECAF_printf("do_block_end_cb begin\n");
 	DECAF_read_mem(param->be.env,param->be.cur_pc,sizeof(char)*2,insn_buf);
 
 	switch(insn_buf[0]) {
@@ -125,6 +136,8 @@ void do_read_taint_mem(DECAF_Callback_Params *param)
 	uint32_t cr3= DECAF_getPGD(cpu_single_env);
 	char name[128];
 	tmodinfo_t dm;// (tmodinfo_t *) malloc(sizeof(tmodinfo_t));
+	//chy
+	DECAF_printf("do_write_taint_mem begin\n");
 	if(VMI_locate_module_c(eip,cr3, name, &dm) == -1 && !keylogger_log)
 	{
 		DECAF_printf("\n dm is null 0x%08x  \n",cr3);
@@ -160,6 +173,8 @@ void do_write_taint_mem(DECAF_Callback_Params *param)
 	uint32_t cr3= DECAF_getPGD(cpu_single_env);
 	char name[128];
 	tmodinfo_t  dm;// (tmodinfo_t *) malloc(sizeof(tmodinfo_t));
+	//chy
+	DECAF_printf("do_write_taint_mem begin\n");
 	if(VMI_locate_module_c(eip,cr3, name, &dm) == -1 && !keylogger_log)
 	{
 		DECAF_printf("\n dm is null 0x%08x  \n",cr3);
@@ -195,6 +210,8 @@ void do_write_taint_mem(DECAF_Callback_Params *param)
 
 static void tracing_send_keystroke(DECAF_Callback_Params *params)
 {
+  //chy
+  DECAF_printf("tracing_send_keystroke begin\n");
   if(!taint_key_enabled)
 	  return;
 
@@ -207,6 +224,8 @@ static void tracing_send_keystroke(DECAF_Callback_Params *params)
 
 void do_taint_sendkey(Monitor *mon, const QDict *qdict)
 {
+  //chy
+  DECAF_printf("do_taint_sendkey begin\n");
   // Set the origin and offset for the callback
   if(qdict_haskey(qdict, "key"))
   {
@@ -225,6 +244,8 @@ void do_taint_sendkey(Monitor *mon, const QDict *qdict)
 
 void keylogger_cleanup()
 {
+      //chy
+	  DECAF_printf("keylogger_cleanup begin\n");
 	  if(keylogger_log)
 			fclose(keylogger_log);
 		if(handle_read_taint_mem)
@@ -241,6 +262,8 @@ void keylogger_cleanup()
 }
 void do_enable_keylogger_check( Monitor *mon, const QDict *qdict)
 {
+	//chy
+	DECAF_printf("do_enable_keylogger_ckeck begin\n");
 	const char *tracefile_t = qdict_get_str(qdict, "tracefile");
 	keylogger_log= fopen(tracefile_t,"w");
 	if(!keylogger_log)
@@ -261,6 +284,8 @@ void do_enable_keylogger_check( Monitor *mon, const QDict *qdict)
 }
 void do_disable_keylogger_check( Monitor *mon, const QDict *qdict)
 {
+	//chy
+	DECAF_printf("do_disable_keylogger_ckeck begin\n");
 	keylogger_cleanup();
 	DECAF_printf("disable taintmodule check successfully \n");
 }

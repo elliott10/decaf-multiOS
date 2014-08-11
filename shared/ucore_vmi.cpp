@@ -118,7 +118,87 @@ void ucore_extract_symbols_info(CPUState *env, uint32_t cr3, target_ulong start_
 	}
 }
 
+// get new module, basically reading from mm_struct
+static void ucore_get_new_modules(CPUState* env, process * proc)
+{
+	target_ulong ts_mm, mm_mmap, vma_file, vma_next, f_dentry;
+	const int MAX_LOOP_COUNT = 1024;	// prevent infinite loop
+	target_ulong vma_vm_start = 0, vma_vm_end = 0, vma_vm_flags, vma_vm_pgoff;
+	target_ulong last_vm_start = 0, last_vm_end = 0;
+	char name[32], key[128];	// module file path
+	string last_mod_name, mod_name;
+	target_ulong mod_vm_start, mod_vm_end;
+	module* mod = NULL;
+	string _name;
+	set<uint32_t> module_bases;
+	bool finished_traversal = false;
+	int mod_stage = 0;
+	bool three_sections_found = false;
+	static int offset_populated = 0, dentry_offset_populated = 0;
+	const int VM_FLAGS_NONE = 0;
+    mod_vm_start=0;
+	mod = VMI_find_module_by_key(proc->name);
+	if (!mod) {
+		mod = new module();
+		strncpy(mod->name, proc->name, 16);
+		mod->name[31] = '\0';
+		mod->size = 4096;
+		VMI_add_module(mod, mod->name);
+	}
+    VMI_insert_module(proc->pid, mod_vm_start, mod);
+	monitor_printf(default_mon, "ucore add module %s\n", mod->name);
 
+	return;
+}
+
+//get idleproc
+int ucore_find_idleproc(CPUState *env) {
+	
+	gva_t idleproc, idleproc_pid,idleproc_cr3; 
+	char idleproc_name[20];
+    const int MAX_LOOP_COUNT = 1024;
+    static int got_idleproc=0;
+	if(got_idleproc) return got_idleproc;
+	// avoid infinite loop
+	for (int count = MAX_LOOP_COUNT; count > 0; --count) {
+		//get idleproc struct addr
+		BREAK_IF(DECAF_read_mem(env, 
+								uop.idleproc,
+								4,
+								&idleproc) < 0);
+		//get idleproc's pid
+		BREAK_IF(DECAF_read_mem(env, 
+								idleproc + uop.ps_pid,
+								4,
+								&idleproc_pid) < 0);
+		//get idleproc's cr3
+		BREAK_IF(DECAF_read_mem(env, 
+									idleproc  + uop.ps_cr3,
+									4,
+									&idleproc_cr3) < 0);
+		//get idleproc's name
+		BREAK_IF(DECAF_read_mem(env,
+									idleproc + uop.ps_name,
+									16, idleproc_name) < 0);
+		//monitor_printf(default_mon, "ucore_find_idleproc　addr 0x%x, pid 0x%x, cr3 0x%x\n",
+		//			   idleproc, idleproc_pid, idleproc_cr3);
+        // store current proc_struct's base address
+		if(strncmp(idleproc_name,"idle",5)==0) {
+			 process* pe = new process();
+			 pe->pid = idleproc_pid;
+			 pe->parent_pid = 0;
+			 pe->cr3 =  idleproc_cr3;
+			 pe->EPROC_base_addr = uop.idleproc;
+			 strncpy(pe->name,idleproc_name,16);
+		     got_idleproc=1;
+		     VMI_create_process(pe);
+		     ucore_get_new_modules(env, pe);
+			 monitor_printf(default_mon, "ucore_find_idleproc successfully\n");
+			 return got_idleproc;
+		}
+	}
+	return got_idleproc;
+}
 // process * find_new_process(CPUState *env, uint32_t cr3) __attribute__((optimize("O0")));
 // scan the task list and find new process
 static
@@ -133,22 +213,12 @@ process * ucore_find_new_process(CPUState *env) {
     const int MAX_LOOP_COUNT = 1024;
 	process *proc;
 	proc_list_addr = uop.proc_list;
-	//DECAF_read_mem(env, proc_list_addr, 4, &prev_addr); //prev_list
- 	//DECAF_read_mem(env, proc_list_addr+4, 4, &nextproc_list_link); //proc_list.next_list
-	//monitor_printf(default_mon, "idleproc kernel thread @ [%08x] \n", uop.idleproc);
-#if 0
-	if(initproc_addr!=uop.initproc) {
-		monitor_printf(default_mon, "ERROR get proc list prev_addr %08x, next_addr %8x \
-					    initproc_addr %8x, initproc.list_link addr %8x\n", 
-					    prev_addr, next_addr, 
-						uop.initproc,
-						uop.initproc+uop.ps_list_link);
-		return NULL;
-	}
-	monitor_printf(default_mon, "SUCCESS get proc list");
-	return NULL;
-#endif
+
     nextproc_list_link=proc_list_addr; //proc_list.next_list
+
+	
+	//chy try find ucore idleproc
+	ucore_find_idleproc(env);
 	// avoid infinite loop
 	for (int count = MAX_LOOP_COUNT; count > 0; --count) {
 		//get proc's list_link
@@ -216,39 +286,6 @@ process * ucore_find_new_process(CPUState *env) {
     return (process *)NULL;
 }
 
-
-// get new module, basically reading from mm_struct
-static void ucore_get_new_modules(CPUState* env, process * proc)
-{
-	target_ulong ts_mm, mm_mmap, vma_file, vma_next, f_dentry;
-	const int MAX_LOOP_COUNT = 1024;	// prevent infinite loop
-	target_ulong vma_vm_start = 0, vma_vm_end = 0, vma_vm_flags, vma_vm_pgoff;
-	target_ulong last_vm_start = 0, last_vm_end = 0;
-	char name[32], key[128];	// module file path
-	string last_mod_name, mod_name;
-	target_ulong mod_vm_start, mod_vm_end;
-	module* mod = NULL;
-	string _name;
-	set<uint32_t> module_bases;
-	bool finished_traversal = false;
-	int mod_stage = 0;
-	bool three_sections_found = false;
-	static int offset_populated = 0, dentry_offset_populated = 0;
-	const int VM_FLAGS_NONE = 0;
-    mod_vm_start=0;
-	mod = VMI_find_module_by_key(proc->name);
-	if (!mod) {
-		mod = new module();
-		strncpy(mod->name, proc->name, 16);
-		mod->name[31] = '\0';
-		mod->size = 4096;
-		VMI_add_module(mod, mod->name);
-	}
-    VMI_insert_module(proc->pid, mod_vm_start, mod);
-	monitor_printf(default_mon, "ucore add module %s\n", mod->name);
-
-	return;
-}
 // for every tlb call back, we try finding new processes
 // static
 // void ucore_tlb_call_back(DECAF_Callback_Params *temp) __attribute__((optimize("O0")));
@@ -276,6 +313,8 @@ static void ucore_check_procexit(void *) {
 
 	const int MAX_LOOP_COUNT = 1024;
 
+	//chy add the idleproc will run forever
+	live_pids.insert(0);
 	for(int i=0; i<MAX_LOOP_COUNT; i++)
 	{
                 target_ulong proc_pid;
@@ -320,6 +359,17 @@ static void ucore_check_procexit(void *) {
 	}
 }
 
+static void ucore_parse_function(void)
+{
+	char * module="hello";
+	char * fname[]={"print_me","myreadline"};
+	target_ulong offset[]={0x8017d0,0x8018d0};
+	int i, size=2;
+	 monitor_printf(default_mon, "ucore_parse_function: insert functions\n");
+	for (i=0;i<size;i++){
+	    funcmap_insert_function(module, fname[i], offset[i]);
+	}
+}
 // to see whether this is a ucore or not,
 // the trick is to check the init_thread_info, init_task
 int find_ucore(CPUState *env, uintptr_t insn_handle) {
@@ -338,7 +388,8 @@ int find_ucore(CPUState *env, uintptr_t insn_handle) {
     monitor_printf(default_mon, "ps field offset: cr3 @ %d \n", uop.ps_cr3);
 	 
     VMI_guest_kernel_base = 0xc0000000;
-
+    ucore_parse_function();
+	ucore_find_idleproc(env);
     return (1);
 }
 

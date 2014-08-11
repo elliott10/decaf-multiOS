@@ -57,6 +57,7 @@ target_ulong funcmap_get_pc(const char *module_name, const char *function_name, 
 target_ulong funcmap_get_pc(const char *module_name, const char *function_name, target_ulong cr3)
 {
 	target_ulong base;
+	monitor_printf(default_mon, "funcmap_get_pc begin, mod %s, cr3 0x%x\n", module_name, cr3); 
 	module *mod = VMI_find_module_by_name(module_name, cr3, &base);
 	if(!mod) {
 		monitor_printf(default_mon, "funcmap_get_pc: 1 can not find mod %s, cr3=0x%x in \n",module_name, cr3);
@@ -85,26 +86,33 @@ target_ulong funcmap_get_pc(const char *module_name, const char *function_name, 
 int funcmap_get_name(target_ulong pc, target_ulong cr3, string &mod_name, string &func_name)
 {
 	target_ulong base;
+	monitor_printf(default_mon, "funcmap_get_name begin: pc 0x%x, cr3 0x%x\n",pc,cr3);
 	module *mod = VMI_find_module_by_pc(pc, cr3, &base);
-	if(!mod)
+	if(!mod) {
+		monitor_printf(default_mon, "funcmap_get_name: 1 can not find mod by pc 0x%x, cr3 0x%x\n",pc,cr3);
 		return -1;
-
+    }
 	map<string, map<uint32_t, string> >::iterator iter = map_offset_function.find(mod->name);
-	if (iter == map_offset_function.end())
+	if (iter == map_offset_function.end()) {
+		monitor_printf(default_mon, "funcmap_get_name: 2 can not find func in mod %s, by pc 0x%x, cr3 0x%x\n",mod->name, pc,cr3);
 		return -1;
-
+    }
 	map<uint32_t, string>::iterator iter2 = iter->second.find(pc - base);
-	if (iter2 == iter->second.end())
+	if (iter2 == iter->second.end()){
+		monitor_printf(default_mon, "funcmap_get_name: 3 can not find mod %s, by pc 0x%x, cr3 0x%x, base 0x%x\n",
+					   mod->name, pc,cr3,base);
 		return -1;
-
+    } 
 	mod_name = mod->name;
 	func_name = iter2->second;
+	monitor_printf(default_mon, "funcmap_get_name: 4 end: find mod %s, func %s\n",mod->name,iter2->second.c_str()); 
 	return 0;
 }
 
 int funcmap_get_name_c(target_ulong pc, target_ulong cr3, char *mod_name, char *func_name)
 {
 	string mod, func;
+	monitor_printf(default_mon, "funcmap_get_name_c begin, pc 0x%x, cr3 0x%x\n", pc, cr3	); 
 	int ret = funcmap_get_name(pc, cr3, mod, func);
 	if(ret == 0) {
 		//we assume the caller has allocated enough space for mod_name and func_name
@@ -146,10 +154,16 @@ void funcmap_insert_function(const char *module, const char *fname, uint32_t off
 		map<string, uint32_t> func_offset;
 		func_offset[fname] = offset;
 		map_function_offset[module] = func_offset;
-		monitor_printf(default_mon, "1: map_funtion_offset size %d\n",map_function_offset.size());
+		//chy show mod and func size
+		map<string, map<uint32_t, string> >::iterator iter3 = map_offset_function.find(module);
+		monitor_printf(default_mon, "1: map_funtion_offset mod size %d, func size %d\n",
+					   map_function_offset.size(),iter3->second.size());
 	} else {
 		iter->second.insert(pair<string, uint32_t>(string(fname), offset));
-		monitor_printf(default_mon, "2: map_funtion_offset size %d\n",map_function_offset.size());
+		//chy show mod and func size
+		map<string, map<uint32_t, string> >::iterator iter3 = map_offset_function.find(module);
+		monitor_printf(default_mon, "1: map_funtion_offset mod size %d, func size %d\n",
+					   map_function_offset.size(),iter3->second.size());
 	}
 
 	map<string, map<uint32_t, string> >::iterator iter2 = map_offset_function.find(module);
@@ -157,10 +171,16 @@ void funcmap_insert_function(const char *module, const char *fname, uint32_t off
 		map<uint32_t, string> offset_func;
 		offset_func[offset] = fname;
 		map_offset_function[module] = offset_func;
-		monitor_printf(default_mon, "3: map_funtion_offset size %d\n",map_function_offset.size());
+		//chy show mod and func size
+		map<string, map<uint32_t, string> >::iterator iter3 = map_offset_function.find(module);
+		monitor_printf(default_mon, "1: map_funtion_offset mod size %d, func size %d\n",
+					   map_function_offset.size(),iter3->second.size());
 	} else
 		iter2->second.insert(pair<uint32_t, string>(offset, fname));
-        monitor_printf(default_mon, "4: map_funtion_offset size %d\n",map_function_offset.size());
+		//chy show mod and func size
+		map<string, map<uint32_t, string> >::iterator iter3 = map_offset_function.find(module);
+		monitor_printf(default_mon, "1: map_funtion_offset mod size %d, func size %d\n",
+					   map_function_offset.size(),iter3->second.size());
 }
 
 static void function_map_save(QEMUFile * f, void *opaque)

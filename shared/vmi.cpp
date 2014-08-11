@@ -183,25 +183,36 @@ module * VMI_find_module_by_base(target_ulong pgd, uint32_t base)
 module * VMI_find_module_by_pc(target_ulong pc, target_ulong pgd, target_ulong *base)
 {
 	process *proc ;
+	monitor_printf(default_mon, "VMI_find_module_by_pc begin 1: pc 0x%x, pgd 0x%x\n",pc,pgd);
 	if (pc >= VMI_guest_kernel_base) {
 		proc = process_pid_map[0];
+		monitor_printf(default_mon, "VMI_find_module_by_pc 1.1: proc name %s, cr3 0x%x, pid%d\n",
+					   proc->name, proc->cr3, proc->pid);
 	} else {
 		unordered_map < uint32_t, process * >::iterator iter_p = process_map.find(pgd);
-		if (iter_p == process_map.end())
+		if (iter_p == process_map.end()) {
+			monitor_printf(default_mon, "VMI_find_module_by_pc 1.2: no find  pc 0x%x, pgd%d\n",
+						   pc,pgd);
 			return NULL;
-
+        }
 		proc = iter_p->second;
+		monitor_printf(default_mon, "VMI_find_module_by_pc 1.3: proc name %s, cr3 0x%x, pid%d\n",
+					   	  proc->name, proc->cr3, proc->pid);
 	}
-
+	monitor_printf(default_mon, "VMI_find_module_by_pc begin 2: pc 0x%x, pgd 0x%x\n",pc,pgd);
 	unordered_map< uint32_t, module * >::iterator iter;
 	for (iter = proc->module_list.begin(); iter != proc->module_list.end(); iter++) {
 		module *mod = iter->second;
 		if (iter->first <= pc && mod->size + iter->first > pc) {
 			*base = iter->first;
+			
+			monitor_printf(default_mon, "VMI_find_module_by_pc 3: find mod  %s\n",
+						   mod->name);
 			return mod;
 		}
 	}
-
+	monitor_printf(default_mon, "VMI_find_module_by_pc 4: no find \n");
+				   
     return NULL;
 }
 
