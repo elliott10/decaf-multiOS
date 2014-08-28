@@ -286,6 +286,57 @@ process * ucore_find_new_process(CPUState *env) {
     return (process *)NULL;
 }
 
+#if 0
+//ucore_list_processes
+int ucore_list_processes(void)
+{
+	CPUState *env = first_cpu;
+	int count=0;
+	gva_t task_struct;
+	gva_t list; 
+	gva_t pid; 
+	gva_t mm; 
+	gva_t list_addr;
+	char name[20];
+
+	task_struct = UCORE_OFFSET_PROFILE.proc_list;
+
+	//DECAF_read_ptr(env, task_struct + 4, &task_struct); //pass the link list
+	DECAF_read_ptr(env, task_struct, &task_struct); //pass the link list
+
+	task_struct -= UCORE_OFFSET_PROFILE.ps_list_link;
+
+	monitor_printf(default_mon, "\n***** UCORE Processes *****\n\n");
+
+	while(1)
+	{
+
+		//target_ulong list = task_struct + UCORE_OFFSET_PROFILE.ps_list_link;
+		//target_ulong pid = task_struct + UCORE_OFFSET_PROFILE.ps_pid;
+		//target_ulong mm = task_struct + UCORE_OFFSET_PROFILE.ps_mm;
+		//target_ulong name = task_struct + UCORE_OFFSET_PROFILE.ps_name;
+
+		DECAF_read_ptr(env, UCORE_OFFSET_PROFILE.ps_list_link + task_struct, &list);
+		DECAF_read_ptr(env, UCORE_OFFSET_PROFILE.ps_pid + task_struct, &pid);
+		DECAF_read_ptr(env, UCORE_OFFSET_PROFILE.ps_mm + task_struct, &mm);
+		DECAF_read_mem(env, UCORE_OFFSET_PROFILE.ps_name + task_struct, sizeof(name), name);
+
+		monitor_printf(default_mon, "0x%x\t%3d\t0x%-8x\t%s\n", task_struct, pid, mm, name);
+
+		count++;
+		task_struct = list - UCORE_OFFSET_PROFILE.ps_list_link;
+
+		BREAK_IF(UCORE_OFFSET_PROFILE.proc_list == list);
+
+	}
+
+	monitor_printf(default_mon, "\n***** A total of %d processes *****\n", count);
+
+	return count;
+}
+
+#endif
+
 // for every tlb call back, we try finding new processes
 // static
 // void ucore_tlb_call_back(DECAF_Callback_Params *temp) __attribute__((optimize("O0")));
@@ -362,11 +413,52 @@ static void ucore_check_procexit(void *) {
 static void ucore_parse_function(void)
 {
 	char * module="hello";
-	char * fname[]={"print_me","myreadline","fprintf","vfprintf","vprintfmt","fputch","write",
-					 "sys_write","strncpy","read","sys_read","syscall"};
-	target_ulong offset[]={0x8017d0,0x8018d0,0x8008b3,0x800879,0x801191,0x800844,0x8005e6,
-	                       0x8002aa,0x800b8a,0x8005c5,0x800281,0x8000b8};
-	int i, size=12;
+	char * fname[]={
+	"cprintf" ,
+	"fprintf" ,
+	"print_bye" ,
+	"print_hello" ,
+	"print_me" ,
+	"print_pgdir" ,
+	"print_stat" ,
+	"printfmt" ,
+	"printnum" ,
+	"snprintf" ,
+	"sprintputch" ,
+	"vcprintf" ,
+	"vfprintf" ,
+	"vprintfmt" ,
+	"vsnprintf" ,
+	"sys_write" ,
+	"write" ,
+	"myreadline" ,
+	"read" ,
+	"readdir" ,
+	"sys_read" };
+	target_ulong offset[]={
+	0x008003e4,
+	0x008004ce,
+	0x008018c5,
+	0x0080188c,
+	0x008018a8,
+	0x00800958,
+	0x00800252,
+	0x00800d03,
+	0x00800b18,
+	0x008011ce,
+	0x00801199,
+	0x008003a8,
+	0x00800493,
+	0x00800d3a,
+	0x00801204,
+	0x008006fc,
+	0x00800146,
+	0x008018e5,
+	0x00800125,
+	0x00800098,
+	0x008006d3};
+
+	int i, size=21;
 	 monitor_printf(default_mon, "ucore_parse_function: insert functions\n");
 	for (i=0;i<size;i++){
 	    funcmap_insert_function(module, fname[i], offset[i]);

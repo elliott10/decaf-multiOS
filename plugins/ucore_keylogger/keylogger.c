@@ -146,7 +146,10 @@ void do_read_taint_mem(DECAF_Callback_Params *param)
 	if(stack_top)
 	{
 		if(cr3 == cr3_stack[stack_top-1])
+		{
 			funcmap_get_name_c(sys_call_entry_stack[stack_top-1], cr3, modname_t, func_name_t);
+			fprintf(keylogger_log,"\nSTACK_READ_TAINT_MEM \t sys_call_entry_stack:[ %x ] func_name:[ %s ]\n", sys_call_entry_stack[stack_top-1], func_name_t);
+		}
 		else {
 			memset(modname_t, 0, 512);
 			memset(func_name_t, 0, 512);
@@ -184,7 +187,10 @@ void do_write_taint_mem(DECAF_Callback_Params *param)
 	if(stack_top)
 	{
 		if(cr3 == cr3_stack[stack_top-1])
+		{
 			funcmap_get_name_c(sys_call_entry_stack[stack_top-1], cr3, modname_t, func_name_t);
+			fprintf(keylogger_log,"\nWRITE_TAINT_MEM \t sys_call_entry_stack:[ %x ] func_name:[ %s ]\n", sys_call_entry_stack[stack_top-1], func_name_t);
+}
 		else {
 			memset(modname_t, 0, 512);
 			memset(func_name_t, 0, 512);

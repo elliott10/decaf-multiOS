@@ -2,5 +2,5 @@
 #define DEFINE_INSN_END
 #define DEFINE_BLOCK_BEGIN
 #define DEFINE_BLOCK_END
-#define DECAF_HOME "/ubuntu/chyyuu/develop/dbi/decaf/git-repo/decaf-platform"
-#define PLUGIN_PATH "/ubuntu/chyyuu/develop/dbi/decaf/git-repo/decaf-platform/plugins/ucore_hookapitests"
+#define DECAF_HOME "/home/os/decaf18/decaf-platform"
+#define PLUGIN_PATH "/home/os/decaf18/decaf-platform/plugins/ucore_hookapitests"
