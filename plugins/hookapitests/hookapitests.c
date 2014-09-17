@@ -61,7 +61,7 @@ typedef struct {
 static void NtCreateFile_ret(void *param)
 {
 	NtCreateFile_hook_context_t *ctx = (NtCreateFile_hook_context_t *)param;
-	DECAF_printf("strcpy exit:");
+	DECAF_printf("strcpy() exit:");
 
 	hookapi_remove_hook(ctx->hook_handle);
 	uint32_t out_handle;

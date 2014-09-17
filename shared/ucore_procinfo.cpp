@@ -421,8 +421,8 @@ int ucore_load_proc_info(CPUState * env, UcoreProcInfo &pi)
   char ucore_id[11]="uCore lab8";
   if (strncmp(ucore_name,ucore_id,sizeof(ucore_id))!=0)
   {
-    monitor_printf(default_mon,"ucore_name_addr %lu, ucore_name is %s || ucore_id is %s\n",ucore_name_addr,ucore_name,ucore_id);
-    monitor_printf(default_mon, "VMI won't work.\nPlease configure procinfo.ini and restart DECAF.\n");
+    //monitor_printf(default_mon,"ucore_name_addr %lu, ucore_name is %s || ucore_id is %s\n",ucore_name_addr,ucore_name,ucore_id);
+    //monitor_printf(default_mon, "VMI won't work.\nPlease configure procinfo.ini and restart DECAF.\n");
     bProcinfoMisconfigured = true;
     return CANNOT_MATCH_PROCINFO_SECTION;
   }
