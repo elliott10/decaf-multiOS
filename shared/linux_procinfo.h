@@ -56,14 +56,14 @@ typedef struct _ProcInfo
 // #endif	
 } ProcInfo;
 
-// int populate_mm_struct_offsets(CPUState *env, target_ptr mm, ProcInfo* pPI);
-// int populate_vm_area_struct_offsets(CPUState *env, target_ptr vma, ProcInfo* pPI);
-// int populate_dentry_struct_offsets(CPUState * env, target_ptr dentry, ProcInfo* pPI);
-// int getDentryFromFile(CPUState * env, target_ptr file, ProcInfo* pPI);
+ int populate_mm_struct_offsets(CPUState *env, target_ptr mm, ProcInfo* pPI);
+ int populate_vm_area_struct_offsets(CPUState *env, target_ptr vma, ProcInfo* pPI);
+ int populate_dentry_struct_offsets(CPUState * env, target_ptr dentry, ProcInfo* pPI);
+ int getDentryFromFile(CPUState * env, target_ptr file, ProcInfo* pPI);
 // //runs through the guest's memory and populates the offsets within the
 // // ProcInfo data structure. Returns the number of elements/offsets found
 // // or -1 if error
-// int populate_kernel_offsets(CPUState *env, target_ptr threadinfo, ProcInfo* pPI);
+ int populate_kernel_offsets(CPUState *env, target_ptr threadinfo, ProcInfo* pPI);
 
 int printProcInfo(ProcInfo* pPI);
 int load_proc_info(CPUState * env, gva_t threadinfo, ProcInfo &pi);

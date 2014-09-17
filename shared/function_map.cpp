@@ -156,8 +156,8 @@ void funcmap_insert_function(const char *module, const char *fname, uint32_t off
 		map_function_offset[module] = func_offset;
 		//chy show mod and func size
 		map<string, map<uint32_t, string> >::iterator iter3 = map_offset_function.find(module);
-		monitor_printf(default_mon, "1: map_funtion_offset mod size %d, func size %d\n",
-					   map_function_offset.size(),iter3->second.size());
+//		monitor_printf(default_mon, "1: map_funtion_offset mod size %d, func size %d\n",
+//					   map_function_offset.size(),iter3->second.size());
 	} else {
 		iter->second.insert(pair<string, uint32_t>(string(fname), offset));
 		//chy show mod and func size
@@ -173,14 +173,14 @@ void funcmap_insert_function(const char *module, const char *fname, uint32_t off
 		map_offset_function[module] = offset_func;
 		//chy show mod and func size
 		map<string, map<uint32_t, string> >::iterator iter3 = map_offset_function.find(module);
-		monitor_printf(default_mon, "1: map_funtion_offset mod size %d, func size %d\n",
-					   map_function_offset.size(),iter3->second.size());
+//		monitor_printf(default_mon, "1: map_funtion_offset mod size %d, func size %d\n",
+//					   map_function_offset.size(),iter3->second.size());
 	} else
 		iter2->second.insert(pair<uint32_t, string>(offset, fname));
 		//chy show mod and func size
 		map<string, map<uint32_t, string> >::iterator iter3 = map_offset_function.find(module);
-		monitor_printf(default_mon, "1: map_funtion_offset mod size %d, func size %d\n",
-					   map_function_offset.size(),iter3->second.size());
+//		monitor_printf(default_mon, "1: map_funtion_offset mod size %d, func size %d\n",
+//					   map_function_offset.size(),iter3->second.size());
 }
 
 static void function_map_save(QEMUFile * f, void *opaque)

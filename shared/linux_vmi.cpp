@@ -759,7 +759,44 @@ process * find_new_process(CPUState *env, uint32_t cr3) {
 	// avoid infinite loop
 	for (int count = MAX_LOOP_COUNT; count > 0; --count)
 	{
+		if (DECAF_read_mem(env,
+				next_task + (OFFSET_PROFILE.ts_tasks + sizeof(target_ptr)),
+				sizeof(target_ptr), &next_task) < 0)
+			break;
 
+		// NOTE - tasks is a list_head, so we need to minus offset to get the base address
+		next_task -= OFFSET_PROFILE.ts_tasks;
+/*		if (_last_next_task == next_task
+				|| next_task == OFFSET_PROFILE.init_task_addr) {// we have traversed the whole link list, or no new process
+			break;
+		}*/
+
+		// read task pid, jump out directly when we fail
+		if (DECAF_read_mem(env, next_task + OFFSET_PROFILE.ts_tgid,
+				sizeof(target_ulong), &task_pid) < 0)
+			break;
+
+		if (DECAF_read_mem(env, next_task + OFFSET_PROFILE.ts_mm,
+				sizeof(target_ptr), &mm) < 0) {
+			break;
+		}
+
+		// NOTICE kernel thread does not own a process address space, thus its mm is NULL. It uses active_mm instead
+		if (populate_mm_struct_offsets(env, mm, &OFFSET_PROFILE))
+			continue;	// try until we get it.
+
+		if (mm != 0) { 	// for user-processes
+			// we read the value of active_mm into mm here
+			if (DECAF_read_mem(env,
+					next_task + OFFSET_PROFILE.ts_mm + sizeof(target_ptr),
+					sizeof(target_ptr), &mm) < 0
+					|| DECAF_read_mem(env, mm + OFFSET_PROFILE.mm_pgd,
+							sizeof(target_ulong), &task_pgd) < 0) {
+				break;
+			}
+			proc_cr3 = DECAF_get_phys_addr(env, task_pgd);
+
+#if 0
 		// NOTICE by reading next_task at the beginning, we are skipping the "swapper" task
 		// highly likely linux add the latest process to the tail of the linked list, so we go backward here
 		BREAK_IF(DECAF_read_ptr(env, 
@@ -803,6 +840,7 @@ process * find_new_process(CPUState *env, uint32_t cr3) {
 					&task_pgd) < 0);
 
 			proc_cr3 = DECAF_get_phys_addr(env, task_pgd);
+#endif
 		}
 		else
 		{	// for kernel threads

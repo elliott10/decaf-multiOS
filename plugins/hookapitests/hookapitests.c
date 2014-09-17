@@ -61,19 +61,19 @@ typedef struct {
 static void NtCreateFile_ret(void *param)
 {
 	NtCreateFile_hook_context_t *ctx = (NtCreateFile_hook_context_t *)param;
-	DECAF_printf("NtCreateFile exit:");
+	DECAF_printf("strcpy exit:");
 
 	hookapi_remove_hook(ctx->hook_handle);
 	uint32_t out_handle;
 
 	DECAF_read_mem(NULL, ctx->call_stack[1], 4, &out_handle);
-	DECAF_printf("out_handle=%08x\n", out_handle);
+	DECAF_printf("out_handle=%08x!!!\n", out_handle);
 	free(ctx);
 }
 
 static void NtCreateFile_call(void *opaque)
 {
-	DECAF_printf("NtCreateFile entry\n");
+	DECAF_printf("strcpy() entry!!!\n");
 	NtCreateFile_hook_context_t *ctx = (NtCreateFile_hook_context_t*)
 			malloc(sizeof(NtCreateFile_hook_context_t));
 	if(!ctx) //run out of memory
@@ -113,12 +113,13 @@ static void VirtualAlloc_call(void *opaque)
 static void register_hooks()
 {
 	ntcreatefile_handle = hookapi_hook_function_byname(
-			"ntdll.dll", "NtCreateFile", 1, targetcr3,
+			"libc.so.6", "strcpy", 1, targetcr3,
 			NtCreateFile_call, NULL, 0);
-
+/*
 	VirtualAlloc_handle = hookapi_hook_function_byname(
 			"kernel32.dll", "VirtualAlloc", 1, targetcr3,
 			VirtualAlloc_call, NULL, 0);
+	*/
 
 }
 
