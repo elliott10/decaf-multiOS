@@ -227,6 +227,8 @@ void keylogger_cleanup()
 {
 	  if(keylogger_log)
 			fclose(keylogger_log);
+		if(keystroke_cb_handle)
+			DECAF_unregister_callback(DECAF_KEYSTROKE_CB ,keystroke_cb_handle);
 		if(handle_read_taint_mem)
 			DECAF_unregister_callback(DECAF_READ_TAINTMEM_CB,handle_read_taint_mem);
 		if(handle_write_taint_mem)
