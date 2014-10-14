@@ -1671,7 +1671,7 @@ int vxworks_find_match_section(CPUState * env, const boost::property_tree::ptree
 
       DECAF_read_ptr(env, logtaskid_addr, &logtaskid_addr);
 
-//      monitor_printf(default_mon, "Readlogid: %x ,Logaddr: %x \n", logtaskid_addr, logAddr);
+      monitor_printf(default_mon, "Readlogid: %x ,Logaddr: %x \n", logtaskid_addr, logAddr);
 
       if(logAddr == logtaskid_addr)
       {
