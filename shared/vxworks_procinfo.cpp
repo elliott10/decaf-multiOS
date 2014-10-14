@@ -57,7 +57,7 @@ extern "C" {
 };
 #endif /* __cplusplus */
 
-#include "linux_procinfo.h"
+#include "vxworks_procinfo.h"
 #include "hookapi.h"
 #include "function_map.h"
 #include "shared/vmi.h"
@@ -93,7 +93,7 @@ extern "C" {
 */
 #endif
 
-static inline int isPrintableASCII(target_ulong x)
+static inline int vxworks_isPrintableASCII(target_ulong x)
 {
   int i = 0;
   char c = 0;
@@ -204,7 +204,7 @@ typedef target_int target_pid_t;
 // depending on whether the virtual address range is used
 // we can figure this out by searching through the page tables
 static inline
-int isKernelAddress(gva_t addr)
+int vxworks_isKernelAddress(gva_t addr)
 {
   return (
     //the normal kernel memory area
@@ -222,29 +222,29 @@ int isKernelAddress(gva_t addr)
   );
 }
 
-static inline int isKernelAddressOrNULL(gva_t addr)
+static inline int vxworks_isKernelAddressOrNULL(gva_t addr)
 {
-  return ( (addr == (gva_t)0) || (isKernelAddress(addr)) ); 
+  return ( (addr == (gva_t)0) || (vxworks_isKernelAddress(addr)) ); 
 }
 
-inline int isStructKernelAddress(gva_t addr, target_ulong structSize)
+inline int vxworks_isStructKernelAddress(gva_t addr, target_ulong structSize)
 {
-  return ( isKernelAddress(addr) && isKernelAddress(addr + structSize) );
+  return ( vxworks_isKernelAddress(addr) && vxworks_isKernelAddress(addr + structSize) );
 }
 
-target_ulong getESP(CPUState *env)
+target_ulong vxworks_getESP(CPUState *env)
 {
   return DECAF_getESP(env);
 }
 
-gpa_t getPGD(CPUState *env)
+gpa_t vxworks_getPGD(CPUState *env)
 {
   return (DECAF_getPGD(env) & TARGET_PGD_MASK);
 }
 
 //We will have to replace this function with another one - such as
 // read_mem in DECAF
-static inline target_ulong get_target_ulong_at(CPUState *env, gva_t addr)
+static inline target_ulong vxworks_get_target_ulong_at(CPUState *env, gva_t addr)
 {
   target_ulong val;
   if (DECAF_read_mem(env, addr, sizeof(target_ulong), &val) < 0)
@@ -252,7 +252,7 @@ static inline target_ulong get_target_ulong_at(CPUState *env, gva_t addr)
   return val;
 }
 
-static inline target_uint get_uint32_at(CPUState *env, gva_t addr)
+static inline target_uint vxworks_get_uint32_at(CPUState *env, gva_t addr)
 {
   target_uint val;
   if (DECAF_read_mem(env, addr, sizeof(uint32_t), &val) < 0)
@@ -261,7 +261,7 @@ static inline target_uint get_uint32_at(CPUState *env, gva_t addr)
 }
 
 //Dangerous memcpy
-static inline int get_mem_at(CPUState *env, gva_t addr, void* buf, size_t count)
+static inline int vxworks_get_mem_at(CPUState *env, gva_t addr, void* buf, size_t count)
 {
   return DECAF_read_mem(env, addr, count, buf) < 0 ? 0 : count;
 }
@@ -271,7 +271,7 @@ static inline int get_mem_at(CPUState *env, gva_t addr, void* buf, size_t count)
 // item that points back to the threadinfo
 //ASSUMES PTR byte aligned
 // gva_t findTaskStructFromThreadInfo(CPUState * env, gva_t threadinfo, ProcInfo* pPI, int bDoubleCheck) __attribute__((optimize("O0")));
-gva_t  findTaskStructFromThreadInfo(CPUState * env, gva_t threadinfo, ProcInfo* pPI, int bDoubleCheck)
+gva_t  vxworks_findTaskStructFromThreadInfo(CPUState * env, gva_t threadinfo, ProcInfo* pPI, int bDoubleCheck)
 {
   int bFound = 0;
   target_ulong i = 0;
@@ -291,10 +291,10 @@ gva_t  findTaskStructFromThreadInfo(CPUState * env, gva_t threadinfo, ProcInfo* 
   {
     temp = (threadinfo + i);
     candidate = 0;
-    // candidate = (get_target_ulong_at(env, temp));
+    // candidate = (vxworks_get_target_ulong_at(env, temp));
     DECAF_read_ptr(env, temp, &candidate);
     //if it looks like a kernel address
-    if (isKernelAddress(candidate))
+    if (vxworks_isKernelAddress(candidate))
     {
       //iterate through the potential task struct 
       for (j = 0; j < MAX_TASK_STRUCT_SEARCH_SIZE; j+= sizeof(target_ptr))
@@ -332,25 +332,25 @@ gva_t  findTaskStructFromThreadInfo(CPUState * env, gva_t threadinfo, ProcInfo* 
   return (ret);
 }
 
-gpa_t findPGDFromMMStruct(CPUState * env, gva_t mm, ProcInfo* pPI, int bDoubleCheck)
+gpa_t vxworks_findPGDFromMMStruct(CPUState * env, gva_t mm, ProcInfo* pPI, int bDoubleCheck)
 {
   target_ulong i = 0;
   gpa_t temp = 0;
-  gpa_t pgd = getPGD(env);
+ gpa_t pgd = vxworks_getPGD(env);
 
   if (pPI == NULL)
   {
     return (INV_ADDR);
   }
 
-  if ( !isStructKernelAddress(mm, MAX_MM_STRUCT_SEARCH_SIZE) )
+  if ( !vxworks_isStructKernelAddress(mm, MAX_MM_STRUCT_SEARCH_SIZE) )
   {
     return (INV_ADDR);
   } 
 
   for (i = 0; i < MAX_MM_STRUCT_SEARCH_SIZE; i += sizeof(target_ulong))
   {
-    temp = get_target_ulong_at(env, mm + i);
+    temp = vxworks_get_target_ulong_at(env, mm + i);
 	if (temp == INV_ADDR)
 	  return (INV_ADDR);
     if (pgd == TARGET_PGD_TO_CR3((temp & TARGET_PGD_MASK))) 
@@ -364,13 +364,13 @@ gpa_t findPGDFromMMStruct(CPUState * env, gva_t mm, ProcInfo* pPI, int bDoubleCh
   return (INV_ADDR);
 }
 
-gva_t findMMStructFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI, int bDoubleCheck)
+gva_t vxworks_findMMStructFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI, int bDoubleCheck)
 {  
   if (pPI == NULL)
   {
     return (INV_ADDR);
   }
-  if ( !isStructKernelAddress(ts, MAX_TASK_STRUCT_SEARCH_SIZE) )
+  if ( !vxworks_isStructKernelAddress(ts, MAX_TASK_STRUCT_SEARCH_SIZE) )
   {
     return (INV_ADDR);
   }
@@ -378,16 +378,16 @@ gva_t findMMStructFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI, int bD
   for (target_ulong i = 0, temp = INV_ADDR, last_mm; i < MAX_TASK_STRUCT_SEARCH_SIZE; i += sizeof(target_ulong))
   {
     last_mm = temp;	// record last mm value we read, so that we don't need read it twice
-    temp = get_target_ulong_at(env, ts + i);
-    if (isKernelAddress(temp))
+    temp = vxworks_get_target_ulong_at(env, ts + i);
+    if (vxworks_isKernelAddress(temp))
     {
-      if (findPGDFromMMStruct(env, temp, pPI, bDoubleCheck) != INV_ADDR)
+      if (vxworks_findPGDFromMMStruct(env, temp, pPI, bDoubleCheck) != INV_ADDR)
       {
         // ATTENTION!! One interesting thing here is, when the system just starts, highly likely
         // we will grab the active_mm instead of mm, as the mm is null for kernel thread
         if (pPI->ts_mm == INV_OFFSET) {
           // do a test, if this is mm, then active_mm should be equal to mm
-          if (get_target_ulong_at(env, ts + i + sizeof(target_ulong)) == temp) {
+          if (vxworks_get_target_ulong_at(env, ts + i + sizeof(target_ulong)) == temp) {
 	        pPI->ts_mm = i;
             //monitor_printf(default_mon, "mm and active_mm is the same! \n");
           }
@@ -411,31 +411,31 @@ gva_t findMMStructFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI, int bD
 // furthermore, next->previous should be equal to self
 // same with previous->next
 //lh is the list_head (or supposedly list head)
-int isListHead(CPUState * env, gva_t lh)
+int vxworks_isListHead(CPUState * env, gva_t lh)
 {
   gva_t pPrev = lh + sizeof(target_ulong);
   gva_t next = 0;
   gva_t prev = 0;
 
-  if ( !isKernelAddress(lh) || !isKernelAddress(pPrev) )
+  if ( !vxworks_isKernelAddress(lh) || !vxworks_isKernelAddress(pPrev) )
   {
     return (0);
   }
 
   //if both lh and lh+target_ulong (previous pointer) are pointers
   // then we can dereference them
-  next = get_target_ulong_at(env, lh);
-  prev = get_target_ulong_at(env, pPrev);
+  next = vxworks_get_target_ulong_at(env, lh);
+  prev = vxworks_get_target_ulong_at(env, pPrev);
 
-  if ( !isKernelAddress(next) || !isKernelAddress(prev) )
+  if ( !vxworks_isKernelAddress(next) || !vxworks_isKernelAddress(prev) )
   {
     return (0);
   }
  
   // if the actual dereferences are also pointers (because they should be)
   // then we can check if the next pointer's previous pointer are the same 
-  if ( (get_target_ulong_at(env, prev) == lh)
-       && (get_target_ulong_at(env, next + sizeof(target_ulong)) == lh)
+  if ( (vxworks_get_target_ulong_at(env, prev) == lh)
+       && (vxworks_get_target_ulong_at(env, next + sizeof(target_ulong)) == lh)
      )
   {
     return (1);
@@ -459,7 +459,7 @@ int isListHead(CPUState * env, gva_t lh)
 //So the idea is that we will see if we have a listhead followed by an int followed by 
 // 2 list heads followed by mm struct (basically we search backwards from mmstruct
 // if this pattern is found, then we should have the task struct offset
-gva_t findTaskStructListFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI, int bDoubleCheck)
+gva_t vxworks_findTaskStructListFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI, int bDoubleCheck)
 {
   target_ulong i = 0;
   gva_t temp = 0;
@@ -476,7 +476,7 @@ gva_t findTaskStructListFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI, 
   }
  
   //must check the whole range (includes overflow)
-  if ( !isStructKernelAddress(ts, MAX_TASK_STRUCT_SEARCH_SIZE) )
+  if ( !vxworks_isStructKernelAddress(ts, MAX_TASK_STRUCT_SEARCH_SIZE) )
   {
     return (INV_ADDR);
   }
@@ -496,20 +496,20 @@ gva_t findTaskStructListFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI, 
   {
     temp = ts + pPI->ts_mm - i;
     //if its a list head - then we can be sure that this should work
-    if (isListHead(env, temp))
+    if (vxworks_isListHead(env, temp))
     {
-      //printk(KERN_INFO "[i = %"T_FMT"d] %d, %d, %d, --- \n", i, isListHead(env, temp)
-       //  , isListHead(env, temp + SIZEOF_LIST_HEAD + sizeof(target_ulong))
-      //   , isListHead(env, temp + SIZEOF_LIST_HEAD + SIZEOF_LIST_HEAD + sizeof(target_ulong))
+      //printk(KERN_INFO "[i = %"T_FMT"d] %d, %d, %d, --- \n", i, vxworks_isListHead(env, temp)
+       //  , vxworks_isListHead(env, temp + SIZEOF_LIST_HEAD + sizeof(target_ulong))
+      //   , vxworks_isListHead(env, temp + SIZEOF_LIST_HEAD + SIZEOF_LIST_HEAD + sizeof(target_ulong))
       //   );
       
-      if ( isListHead(env, temp + SIZEOF_LIST_HEAD + sizeof(target_ulong))
-         && isListHead(env, temp + SIZEOF_LIST_HEAD +SIZEOF_LIST_HEAD + sizeof(target_ulong))
+      if ( vxworks_isListHead(env, temp + SIZEOF_LIST_HEAD + sizeof(target_ulong))
+         && vxworks_isListHead(env, temp + SIZEOF_LIST_HEAD +SIZEOF_LIST_HEAD + sizeof(target_ulong))
          )
       {
         //printk(KERN_INFO "FOUND task_struct_list offset [%d]\n", (uint32_t)temp - ts);
         pPI->ts_tasks = temp - ts;
-        return (get_target_ulong_at(env, temp)); 
+        return (vxworks_get_target_ulong_at(env, temp)); 
       }
     }
   }
@@ -521,10 +521,10 @@ gva_t findTaskStructListFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI, 
   for (i = sizeof(target_ulong); i < pPI->ts_mm; i += sizeof(target_ulong))
   {
     temp = ts + pPI->ts_mm - i;
-    if (isListHead(env, temp))
+    if (vxworks_isListHead(env, temp))
     {
       pPI->ts_tasks = temp - ts;
-      return (get_target_ulong_at(env, temp));
+      return (vxworks_get_target_ulong_at(env, temp));
     }
   }
 
@@ -538,7 +538,7 @@ gva_t findTaskStructListFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI, 
 // to previous and next if this ts was the address of a list_head
 // instead
 //TODO: Find another invariance instead of the tasks list?
-int isTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
+int vxworks_isTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
 {
   gva_t temp = 0;
   gva_t temp2 = 0;
@@ -548,7 +548,7 @@ int isTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
     return (0);
   }
 
-  if (!isStructKernelAddress(ts, MAX_TASK_STRUCT_SEARCH_SIZE))
+  if (!vxworks_isStructKernelAddress(ts, MAX_TASK_STRUCT_SEARCH_SIZE))
   {
     return (0);
   }
@@ -562,14 +562,14 @@ int isTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
 
   //dereference temp to get to the TI and then add the offset to get back
   // the pointer to the task struct
-  temp2 = get_target_ulong_at(env, temp) + pPI->ti_task;
-  if ( !isKernelAddress(temp2) )
+  temp2 = vxworks_get_target_ulong_at(env, temp) + pPI->ti_task;
+  if ( !vxworks_isKernelAddress(temp2) )
   {
     return (0);
   }
  
   //now see if the tasks is correct
-  if ( !isListHead(env, ts + pPI->ts_tasks) )
+  if ( !vxworks_isListHead(env, ts + pPI->ts_tasks) )
   {
     return (0);
   }
@@ -584,7 +584,7 @@ int isTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
 //NOTE: We can also use the follow on items which are
 // two list_heads for "children" and "sibling" as well 
 // as the final one which is a task_struct for "group_leader"
-gva_t findRealParentGroupLeaderFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
+gva_t vxworks_findRealParentGroupLeaderFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
 {
   target_ulong i = 0;
   
@@ -595,11 +595,11 @@ gva_t findRealParentGroupLeaderFromTaskStruct(CPUState * env, gva_t ts, ProcInfo
 
   for (i = 0; i < MAX_TASK_STRUCT_SEARCH_SIZE; i += sizeof(target_ulong))
   {
-    if ( isTaskStruct(env, get_target_ulong_at(env, ts+i), pPI) //real_parent
-       && isTaskStruct(env, get_target_ulong_at(env, ts+i+sizeof(target_ulong)), pPI) //parent
-       && isListHead(env, ts+i+sizeof(target_ulong)+sizeof(target_ulong)) //children
-       && isListHead(env, ts+i+sizeof(target_ulong)+sizeof(target_ulong)+SIZEOF_LIST_HEAD) //sibling
-       && isTaskStruct(env, get_target_ulong_at(env, ts+i+sizeof(target_ulong)+sizeof(target_ulong)+SIZEOF_LIST_HEAD+SIZEOF_LIST_HEAD), pPI) //group_leader
+    if ( vxworks_isTaskStruct(env, vxworks_get_target_ulong_at(env, ts+i), pPI) //real_parent
+       && vxworks_isTaskStruct(env, vxworks_get_target_ulong_at(env, ts+i+sizeof(target_ulong)), pPI) //parent
+       && vxworks_isListHead(env, ts+i+sizeof(target_ulong)+sizeof(target_ulong)) //children
+       && vxworks_isListHead(env, ts+i+sizeof(target_ulong)+sizeof(target_ulong)+SIZEOF_LIST_HEAD) //sibling
+       && vxworks_isTaskStruct(env, vxworks_get_target_ulong_at(env, ts+i+sizeof(target_ulong)+sizeof(target_ulong)+SIZEOF_LIST_HEAD+SIZEOF_LIST_HEAD), pPI) //group_leader
        )
     {
       if (pPI->ts_real_parent == INV_OFFSET)
@@ -619,12 +619,12 @@ gva_t findRealParentGroupLeaderFromTaskStruct(CPUState * env, gva_t ts, ProcInfo
 //The characteristics of the init_task that we use are
 //The mm struct pointer is NULL - since it shouldn't be scheduled?
 //The parent and real_parent is itself
-int isInitTask(CPUState * env, gva_t ts, ProcInfo* pPI, int bDoubleCheck)
+int vxworks_isInitTask(CPUState * env, gva_t ts, ProcInfo* pPI, int bDoubleCheck)
 {
   int bMMCheck = 0;
   int bRPCheck = 0;
 
-  if ( (pPI == NULL) || !isStructKernelAddress(ts, MAX_TASK_STRUCT_SEARCH_SIZE) )
+  if ( (pPI == NULL) || !vxworks_isStructKernelAddress(ts, MAX_TASK_STRUCT_SEARCH_SIZE) )
   {
     return (0);
   }
@@ -632,14 +632,14 @@ int isInitTask(CPUState * env, gva_t ts, ProcInfo* pPI, int bDoubleCheck)
   //if we have the mm offset already then just check it
   if (pPI->ts_mm != INV_OFFSET)
   {
-    if ( get_target_ulong_at(env, ts + pPI->ts_mm) == 0)
+    if ( vxworks_get_target_ulong_at(env, ts + pPI->ts_mm) == 0)
     {
       bMMCheck = 1;
     }
   }
   if (pPI->ts_real_parent != INV_OFFSET)
   {
-    if (get_target_ulong_at(env, ts + pPI->ts_real_parent) == ts)
+    if (vxworks_get_target_ulong_at(env, ts + pPI->ts_real_parent) == ts)
     {
       bRPCheck = 1;
     }
@@ -660,7 +660,7 @@ int isInitTask(CPUState * env, gva_t ts, ProcInfo* pPI, int bDoubleCheck)
 
 //To find the "comm" field, we look for the name of
 // init_task which is "swapper" -- we don't check for "swapper/0" or anything else
-gva_t findCommFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
+gva_t vxworks_findCommFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
 {
   target_ulong i = 0;
   //char* temp = NULL; //not used yet, because we are using the int comparison instead
@@ -673,7 +673,7 @@ gva_t findCommFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
     return (INV_ADDR);
   }
 
-  if (!isInitTask(env, ts, pPI, 0))
+  if (!vxworks_isInitTask(env, ts, pPI, 0))
   {
     return (INV_ADDR);
   }
@@ -682,10 +682,10 @@ gva_t findCommFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
   for (i = 0; i < MAX_TASK_STRUCT_SEARCH_SIZE; i+=sizeof(target_ulong)) 
   {
     temp2 = ts + i;
-    if (get_uint32_at(env, temp2) == intSWAP)
+    if (vxworks_get_uint32_at(env, temp2) == intSWAP)
     {
       temp2 += 4; //move to the next item
-      if ((get_uint32_at(env, temp2) & 0x00FFFFFF) == (intPER & 0x00FFFFFF))
+      if ((vxworks_get_uint32_at(env, temp2) & 0x00FFFFFF) == (intPER & 0x00FFFFFF))
       {
         if (pPI->ts_comm == INV_OFFSET)
         {
@@ -725,7 +725,7 @@ gva_t findCommFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
 // which happens to have the whole array of pid_link
 // pid_link consists of hlist, a basically another couple of pointers
 // and a pointer to a pid (which seems to be the same value)
-gva_t findThreadGroupFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
+gva_t vxworks_findThreadGroupFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
 {
   target_ulong i = 0;
 
@@ -743,7 +743,7 @@ gva_t findThreadGroupFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
     i = pPI->ts_group_leader;
   }
 
-  if (!isInitTask(env, ts, pPI, 0))
+  if (!vxworks_isInitTask(env, ts, pPI, 0))
   {
     return (INV_ADDR);
   }
@@ -751,38 +751,38 @@ gva_t findThreadGroupFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
   for ( ; i < MAX_TASK_STRUCT_SEARCH_SIZE; i+=sizeof(target_ulong))
   {
     /*
-    printk(KERN_INFO "%d === %"T_FMT"x, %"T_FMT"x, %"T_FMT"x, %"T_FMT"x, %"T_FMT"x, %d,%d,%d,%d,%d\n", i, get_target_ulong_at(env, ts + i),
-       get_target_ulong_at(env, ts + i + sizeof(target_ulong)),
-       get_target_ulong_at(env, ts+i+sizeof(target_ulong)+sizeof(target_ulong)),
-       get_target_ulong_at(env, ts+i+(sizeof(target_ulong)*3)),
-       get_target_ulong_at(env, ts+i+(sizeof(target_ulong)*4)),
-    (get_target_ulong_at(env, ts + i) == 0),
-       (get_target_ulong_at(env, ts + i + sizeof(target_ulong)) == 0),
-       isKernelAddress(get_target_ulong_at(env, ts+i+sizeof(target_ulong)+sizeof(target_ulong))),
-       isListHead(env, get_target_ulong_at(env, ts+i+(sizeof(target_ulong)*3))), //is a list head
-       (get_target_ulong_at(env, ts+i+(sizeof(target_ulong)*4)) == 0) //this is the entry for vfork_done ?
+    printk(KERN_INFO "%d === %"T_FMT"x, %"T_FMT"x, %"T_FMT"x, %"T_FMT"x, %"T_FMT"x, %d,%d,%d,%d,%d\n", i, vxworks_get_target_ulong_at(env, ts + i),
+       vxworks_get_target_ulong_at(env, ts + i + sizeof(target_ulong)),
+       vxworks_get_target_ulong_at(env, ts+i+sizeof(target_ulong)+sizeof(target_ulong)),
+       vxworks_get_target_ulong_at(env, ts+i+(sizeof(target_ulong)*3)),
+       vxworks_get_target_ulong_at(env, ts+i+(sizeof(target_ulong)*4)),
+    (vxworks_get_target_ulong_at(env, ts + i) == 0),
+       (vxworks_get_target_ulong_at(env, ts + i + sizeof(target_ulong)) == 0),
+       isKernelAddress(vxworks_get_target_ulong_at(env, ts+i+sizeof(target_ulong)+sizeof(target_ulong))),
+       vxworks_isListHead(env, vxworks_get_target_ulong_at(env, ts+i+(sizeof(target_ulong)*3))), //is a list head
+       (vxworks_get_target_ulong_at(env, ts+i+(sizeof(target_ulong)*4)) == 0) //this is the entry for vfork_done ?
     );
     */
     //for init task the pid_link list should be all NULLS
 
 /* This doesn't exactly work because of how different implementations
  populate the pid_link array. So we will use the new signature below
-    if ( (get_target_ulong_at(env, ts + i) == 0)
-       && (get_target_ulong_at(env, ts + i + sizeof(target_ulong)) == 0)
-       && isKernelAddress(get_target_ulong_at(env, ts+i+sizeof(target_ulong)+sizeof(target_ulong)))
-       && isListHead(env, get_target_ulong_at(env, ts+i+(sizeof(target_ulong)*3))) //is a list head
-       && (get_target_ulong_at(env, ts+i+(sizeof(target_ulong)*3)+SIZEOF_LIST_HEAD) == 0) //this is the entry for vfork_done ?
+    if ( (vxworks_get_target_ulong_at(env, ts + i) == 0)
+       && (vxworks_get_target_ulong_at(env, ts + i + sizeof(target_ulong)) == 0)
+       && isKernelAddress(vxworks_get_target_ulong_at(env, ts+i+sizeof(target_ulong)+sizeof(target_ulong)))
+       && vxworks_isListHead(env, vxworks_get_target_ulong_at(env, ts+i+(sizeof(target_ulong)*3))) //is a list head
+       && (vxworks_get_target_ulong_at(env, ts+i+(sizeof(target_ulong)*3)+SIZEOF_LIST_HEAD) == 0) //this is the entry for vfork_done ?
        )
 */
 //Through some additional testing, I see that completion, set_child_tid and clear_child_tid should all be null - utime should be 0 too since it doens't use any time for "userspace" -- its a kernel process. Finally, stime - the system time, should be nonzero for startup, but a very small number since it doesn't get scheduled after the start. 
 // Given this fact, we are going to look for the list_head (which is thread_group) followed by 3 nulls. THe only trick here is that - in some architectures - the list head might be NULL pointers and in others it might be a pointer to itself. .
-    if ( ( isListHead(env, get_target_ulong_at(env, ts+i)) 
-           || ( (get_target_ulong_at(env, ts+i) == 0) && (get_target_ulong_at(env, ts+i+sizeof(target_ulong)) == 0) ) )
-       && (get_target_ulong_at(env, ts+i+SIZEOF_LIST_HEAD) == 0)
-       && (get_target_ulong_at(env, ts+i+SIZEOF_LIST_HEAD+sizeof(target_ulong)) == 0)
-       && (get_target_ulong_at(env, ts+i+SIZEOF_LIST_HEAD+(sizeof(target_ulong)*2)) == 0)
-       && (get_target_ulong_at(env, ts+i+SIZEOF_LIST_HEAD+(sizeof(target_ulong)*3)) == 0) //utime = 0
-       && (get_target_ulong_at(env, ts+i+SIZEOF_LIST_HEAD+(sizeof(target_ulong)*4)) != 0) //stime != 0
+    if ( ( vxworks_isListHead(env, vxworks_get_target_ulong_at(env, ts+i)) 
+           || ( (vxworks_get_target_ulong_at(env, ts+i) == 0) && (vxworks_get_target_ulong_at(env, ts+i+sizeof(target_ulong)) == 0) ) )
+       && (vxworks_get_target_ulong_at(env, ts+i+SIZEOF_LIST_HEAD) == 0)
+       && (vxworks_get_target_ulong_at(env, ts+i+SIZEOF_LIST_HEAD+sizeof(target_ulong)) == 0)
+       && (vxworks_get_target_ulong_at(env, ts+i+SIZEOF_LIST_HEAD+(sizeof(target_ulong)*2)) == 0)
+       && (vxworks_get_target_ulong_at(env, ts+i+SIZEOF_LIST_HEAD+(sizeof(target_ulong)*3)) == 0) //utime = 0
+       && (vxworks_get_target_ulong_at(env, ts+i+SIZEOF_LIST_HEAD+(sizeof(target_ulong)*4)) != 0) //stime != 0
        )
     {
       if ( pPI->ts_thread_group == INV_OFFSET )
@@ -800,14 +800,14 @@ gva_t findThreadGroupFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
 // the cpu_timers
 // followed by real_cred and cred (both of which are pointers)
 // followed by stuff (in 2.6.32) and then comm
-gva_t findCredFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
+gva_t vxworks_findCredFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
 {
   target_ulong i = 0;
   if ((pPI == NULL) || (pPI->ts_comm == INV_OFFSET) )
   {
     return (INV_ADDR);
   }
-  if (!isStructKernelAddress(ts, MAX_TASK_STRUCT_SEARCH_SIZE))
+  if (!vxworks_isStructKernelAddress(ts, MAX_TASK_STRUCT_SEARCH_SIZE))
   {
     return (INV_ADDR);
   }
@@ -816,9 +816,9 @@ gva_t findCredFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
   // the two pointers
   for (i = (sizeof(target_ulong)*4); i < pPI->ts_comm; i+=sizeof(target_ulong))
   {
-    if ( isListHead(env, get_target_ulong_at(env, ts + pPI->ts_comm - i))
-        && isKernelAddress(get_target_ulong_at(env, ts + pPI->ts_comm - i + SIZEOF_LIST_HEAD))
-        && isKernelAddress(get_target_ulong_at(env, ts + pPI->ts_comm - i + SIZEOF_LIST_HEAD + sizeof(target_ulong)))
+    if ( vxworks_isListHead(env, vxworks_get_target_ulong_at(env, ts + pPI->ts_comm - i))
+        && vxworks_isKernelAddress(vxworks_get_target_ulong_at(env, ts + pPI->ts_comm - i + SIZEOF_LIST_HEAD))
+        && vxworks_isKernelAddress(vxworks_get_target_ulong_at(env, ts + pPI->ts_comm - i + SIZEOF_LIST_HEAD + sizeof(target_ulong)))
        )
     {
       if (pPI->ts_real_cred == INV_OFFSET)
@@ -847,7 +847,7 @@ gva_t findCredFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
 // to be random - which is different from tgid and pid
 // both of which are small numbers - so we try it this
 // way
-gva_t findPIDFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
+gva_t vxworks_findPIDFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
 {
   target_ulong offset = 0;
   target_ulong temp = 0;
@@ -855,7 +855,7 @@ gva_t findPIDFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
   {
     return (INV_ADDR);
   }
-  if (!isStructKernelAddress(ts, MAX_TASK_STRUCT_SEARCH_SIZE))
+  if (!vxworks_isStructKernelAddress(ts, MAX_TASK_STRUCT_SEARCH_SIZE))
   {
     return (INV_ADDR);
   }
@@ -865,7 +865,7 @@ gva_t findPIDFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
     return (INV_ADDR);
   }
 
-  ts = get_target_ulong_at(env, ts + pPI->ts_group_leader);
+  ts = vxworks_get_target_ulong_at(env, ts + pPI->ts_group_leader);
   if (ts == INV_ADDR)
     return (INV_ADDR);
 
@@ -879,7 +879,7 @@ gva_t findPIDFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
   //Also notice that since pid_t is defined as 
   // an int - it should be 4 bytes. Thus, either the previous eight bytes
   // look like a canary or not - see the masks that mask out the low bits
-  temp = get_target_ulong_at(env, ts+pPI->ts_real_parent-sizeof(target_ulong));
+  temp = vxworks_get_target_ulong_at(env, ts+pPI->ts_real_parent-sizeof(target_ulong));
   if (temp & STACK_CANARY_MASK)
   {
     offset = sizeof(target_ulong);
@@ -899,15 +899,15 @@ gva_t findPIDFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
   // and so should the stack_canary! 
   //To see if there is a problem - we check to see if the "expected"
   // pid and tgid's match
-  if (get_uint32_at(env, ts + pPI->ts_pid) != get_uint32_at(env, ts + pPI->ts_tgid))
+  if (vxworks_get_uint32_at(env, ts + pPI->ts_pid) != vxworks_get_uint32_at(env, ts + pPI->ts_tgid))
   {
     pPI->ts_pid -= 4;
     pPI->ts_tgid -= 4;  
   }
 
-  if (get_uint32_at(env, ts + pPI->ts_pid) != get_uint32_at(env, ts + pPI->ts_tgid))
+  if (vxworks_get_uint32_at(env, ts + pPI->ts_pid) != vxworks_get_uint32_at(env, ts + pPI->ts_tgid))
   {
-    //printk(KERN_INFO "UH OH THEY ARE NOT THE SAME [%d], [%d]\n", get_uint32_at(env, pPI->ts_pid), get_uint32_at(env, pPI->ts_tgid));
+    //printk(KERN_INFO "UH OH THEY ARE NOT THE SAME [%d], [%d]\n", vxworks_get_uint32_at(env, pPI->ts_pid), vxworks_get_uint32_at(env, pPI->ts_tgid));
   }
   return (ts + pPI->ts_pid);
 }
@@ -922,7 +922,7 @@ gva_t findPIDFromTaskStruct(CPUState * env, gva_t ts, ProcInfo* pPI)
 // argstart, argend, envstart, envend (4)
 //Meaning we have a lot of fields with relative 
 // addresses in the same order as defined - except for brk
-int isStartCodeInMM(CPUState * env, target_ulong* temp, target_ulong expectedStackStart)
+int vxworks_isStartCodeInMM(CPUState * env, target_ulong* temp, target_ulong expectedStackStart)
 {
   if (temp == NULL)
   {
@@ -959,7 +959,7 @@ int isStartCodeInMM(CPUState * env, target_ulong* temp, target_ulong expectedSta
 }
 
 #define MM_TEMP_BUF_SIZE 100
-int populate_mm_struct_offsets(CPUState * env, gva_t mm, ProcInfo* pPI)
+int vxworks_populate_mm_struct_offsets(CPUState * env, gva_t mm, ProcInfo* pPI)
 {
   static bool isOffsetPopulated = false;
   if (isOffsetPopulated)
@@ -975,7 +975,7 @@ int populate_mm_struct_offsets(CPUState * env, gva_t mm, ProcInfo* pPI)
     return (-1);
   }
 
-  if (!isStructKernelAddress(mm, MAX_MM_STRUCT_SEARCH_SIZE))
+  if (!vxworks_isStructKernelAddress(mm, MAX_MM_STRUCT_SEARCH_SIZE))
   {
     return (-1); 
   }
@@ -997,7 +997,7 @@ int populate_mm_struct_offsets(CPUState * env, gva_t mm, ProcInfo* pPI)
       // to the beginning
       pTemp = temp;
       //if we are at the beginning then grab 11 ulongs at a time
-      if (get_mem_at(env, mm+(sizeof(target_ulong)*count), pTemp, 11*sizeof(target_ulong)) != (11*sizeof(target_ulong)))
+      if (vxworks_get_mem_at(env, mm+(sizeof(target_ulong)*count), pTemp, 11*sizeof(target_ulong)) != (11*sizeof(target_ulong)))
       {
         return (-1);
       }
@@ -1008,11 +1008,11 @@ int populate_mm_struct_offsets(CPUState * env, gva_t mm, ProcInfo* pPI)
       //increment pTemp
       pTemp++;
       //10 is the 11th element
-      pTemp[10] = get_target_ulong_at(env, mm+(sizeof(target_ulong) * (numRead)));
+      pTemp[10] = vxworks_get_target_ulong_at(env, mm+(sizeof(target_ulong) * (numRead)));
       numRead++;
     }
     
-    if (isStartCodeInMM(env, pTemp, TARGET_MIN_STACK_START))
+    if (vxworks_isStartCodeInMM(env, pTemp, TARGET_MIN_STACK_START))
     {
       break;
     }
@@ -1048,23 +1048,23 @@ int populate_mm_struct_offsets(CPUState * env, gva_t mm, ProcInfo* pPI)
 //determines whether the address belongs to an RB Node
 // RB as in Red Black Tree - it should work for any tree really
 // maybe?
-int isRBNode(CPUState * env, gva_t vma)
+int vxworks_isRBNode(CPUState * env, gva_t vma)
 {
   target_ulong parent = 0;
   target_ulong left = 0;
   target_ulong right = 0;
   target_ulong parent_mask = ~0x3;
 
-  if (!isKernelAddress(vma))
+  if (!vxworks_isKernelAddress(vma))
   {
     return (0);
   }
 
-  parent = get_target_ulong_at(env, vma);
-  right = get_target_ulong_at(env, vma+ sizeof(target_ulong));
-  left = get_target_ulong_at(env, vma+ (sizeof(target_ulong)*2));
+  parent = vxworks_get_target_ulong_at(env, vma);
+  right = vxworks_get_target_ulong_at(env, vma+ sizeof(target_ulong));
+  left = vxworks_get_target_ulong_at(env, vma+ (sizeof(target_ulong)*2));
   
-  if (!isKernelAddress(parent))
+  if (!vxworks_isKernelAddress(parent))
   {
     return (0);
   }
@@ -1073,7 +1073,7 @@ int isRBNode(CPUState * env, gva_t vma)
   // then see if they point back to parent
   if (left != 0) 
   {
-    if ( !isKernelAddress(left) )
+    if ( !vxworks_isKernelAddress(left) )
     {
       return (0);
     }
@@ -1081,7 +1081,7 @@ int isRBNode(CPUState * env, gva_t vma)
     // here we are going to simply ignore the least significant 2 bits
     // While it is not perfect (rb_node is long aligned) it should be good enough
     //the minimum size of rb_node is 12 bytes anwways.
-    if ( (get_target_ulong_at(env, left) & (parent_mask)) != (parent & (parent_mask)) )
+    if ( (vxworks_get_target_ulong_at(env, left) & (parent_mask)) != (parent & (parent_mask)) )
     {
       return (0);
     }
@@ -1089,11 +1089,11 @@ int isRBNode(CPUState * env, gva_t vma)
 
   if (right != 0) 
   {
-    if ( !isKernelAddress(right) )
+    if ( !vxworks_isKernelAddress(right) )
     {
       return (0);
     }
-    if ( (get_target_ulong_at(env, right) & (parent_mask)) != (parent & (parent_mask)) )
+    if ( (vxworks_get_target_ulong_at(env, right) & (parent_mask)) != (parent & (parent_mask)) )
     {
       return (0);
     }
@@ -1112,7 +1112,7 @@ int isRBNode(CPUState * env, gva_t vma)
 // the vm area - it must be a userspace virtual address. This is a perfect
 // test to see which version of the kernel we are dealing with since
 // the mm_struct* would be a kernel address
-int populate_vm_area_struct_offsets(CPUState * env, gva_t vma, ProcInfo* pPI)
+int vxworks_populate_vm_area_struct_offsets(CPUState * env, gva_t vma, ProcInfo* pPI)
 {
   static bool isOffsetPopulated = false;
   if (isOffsetPopulated)
@@ -1126,12 +1126,12 @@ int populate_vm_area_struct_offsets(CPUState * env, gva_t vma, ProcInfo* pPI)
     return (-1);
   }
 
-  if (!isStructKernelAddress(vma, MAX_VM_AREA_STRUCT_SEARCH_SIZE))
+  if (!vxworks_isStructKernelAddress(vma, MAX_VM_AREA_STRUCT_SEARCH_SIZE))
   {
     return (-1);
   }
 
-  if (isKernelAddress(get_target_ulong_at(env, vma)))
+  if (vxworks_isKernelAddress(vxworks_get_target_ulong_at(env, vma)))
   {
     //if its a kernel pointer then we are dealing with 2.6
     is26 = 1;
@@ -1169,7 +1169,7 @@ int populate_vm_area_struct_offsets(CPUState * env, gva_t vma, ProcInfo* pPI)
   // in 2.6 it is right before the first rb_node
   for (i = 0; i < MAX_VM_AREA_STRUCT_SEARCH_SIZE; i+=sizeof(target_ulong))
   {
-    if (isRBNode(env, vma + i))
+    if (vxworks_isRBNode(env, vma + i))
     {
       if (pPI->vma_vm_flags == INV_OFFSET)
       {
@@ -1201,16 +1201,16 @@ int populate_vm_area_struct_offsets(CPUState * env, gva_t vma, ProcInfo* pPI)
     target_ulong vm_pgoff;
     // NOTICE the vm_pgoff shouldn't be zero, as in ARM, the pointer in list_head can be NULL,
     // there is possibility we are getting the first node of anon_vma_node as vm_file
-    if ( isListHead(env, vma+i) 
+    if ( vxworks_isListHead(env, vma+i) 
 //once again it looks like in the ARM test case, listhead is NULL instead of pointing to self
 #ifdef TARGET_ARM
-         || ( (get_target_ulong_at(env, vma+i) == 0) && (get_target_ulong_at(env, vma+i+sizeof(target_ulong)) == 0) )
+         || ( (vxworks_get_target_ulong_at(env, vma+i) == 0) && (vxworks_get_target_ulong_at(env, vma+i+sizeof(target_ulong)) == 0) )
 #endif
     ) {
       //first we see if the short circuiting works - if it does then we are set
       if (
-           isKernelAddress(get_target_ulong_at(env, vma + i + SIZEOF_LIST_HEAD + sizeof(target_ulong)))
-           && !isKernelAddress(vm_pgoff = get_target_ulong_at(env, vma + i + SIZEOF_LIST_HEAD + sizeof(target_ulong) + sizeof(target_ulong)))
+           vxworks_isKernelAddress(vxworks_get_target_ulong_at(env, vma + i + SIZEOF_LIST_HEAD + sizeof(target_ulong)))
+           && !vxworks_isKernelAddress(vm_pgoff = vxworks_get_target_ulong_at(env, vma + i + SIZEOF_LIST_HEAD + sizeof(target_ulong) + sizeof(target_ulong)))
            && vm_pgoff != 0
          )
       {
@@ -1234,7 +1234,7 @@ int populate_vm_area_struct_offsets(CPUState * env, gva_t vma, ProcInfo* pPI)
 // one for rcu_head and another for the function pointer
 //then struct path is itself two pointers thus
 // its a constant - 3 pointers away
-int getDentryFromFile(CPUState * env, gva_t file, ProcInfo* pPI)
+int vxworks_getDentryFromFile(CPUState * env, gva_t file, ProcInfo* pPI)
 {
   static bool isOffsetPopulated = false;
   if (isOffsetPopulated)
@@ -1267,7 +1267,7 @@ int getDentryFromFile(CPUState * env, gva_t file, ProcInfo* pPI)
 //Furthermore, we can also look for cred in a known to be root process
 // such as init.
 #define IS_UID(_x) (_x < 0x0000FFFF)
-int populate_cred_struct_offsets(CPUState * env, gva_t cred, ProcInfo* pPI)
+int vxworks_populate_cred_struct_offsets(CPUState * env, gva_t cred, ProcInfo* pPI)
 {
   target_ulong i = sizeof(target_int);
 
@@ -1276,7 +1276,7 @@ int populate_cred_struct_offsets(CPUState * env, gva_t cred, ProcInfo* pPI)
     return (-1);
   }
 
-  if (!isStructKernelAddress(cred, MAX_CRED_STRUCT_SEARCH_SIZE))
+  if (!vxworks_isStructKernelAddress(cred, MAX_CRED_STRUCT_SEARCH_SIZE))
   {
     return (-1);
   }
@@ -1284,12 +1284,12 @@ int populate_cred_struct_offsets(CPUState * env, gva_t cred, ProcInfo* pPI)
   for (i = sizeof(target_int); i < MAX_CRED_STRUCT_SEARCH_SIZE; i += sizeof(target_int))
   {
     if (
-         IS_UID(get_uint32_at(env, cred + i)) //uid
-         && IS_UID(get_uint32_at(env, cred + i + sizeof(target_int))) //gid
-         && IS_UID(get_uint32_at(env, cred + i + (sizeof(target_int) * 2))) //suid
-         && IS_UID(get_uint32_at(env, cred + i + (sizeof(target_int) * 3))) //sgid
-         && IS_UID(get_uint32_at(env, cred + i + (sizeof(target_int) * 4))) //euid
-         && IS_UID(get_uint32_at(env, cred + i + (sizeof(target_int) * 5))) //egid
+         IS_UID(vxworks_get_uint32_at(env, cred + i)) //uid
+         && IS_UID(vxworks_get_uint32_at(env, cred + i + sizeof(target_int))) //gid
+         && IS_UID(vxworks_get_uint32_at(env, cred + i + (sizeof(target_int) * 2))) //suid
+         && IS_UID(vxworks_get_uint32_at(env, cred + i + (sizeof(target_int) * 3))) //sgid
+         && IS_UID(vxworks_get_uint32_at(env, cred + i + (sizeof(target_int) * 4))) //euid
+         && IS_UID(vxworks_get_uint32_at(env, cred + i + (sizeof(target_int) * 5))) //egid
        )
     {
       if (pPI->cred_uid == INV_OFFSET)
@@ -1335,7 +1335,7 @@ int populate_cred_struct_offsets(CPUState * env, gva_t cred, ProcInfo* pPI)
 // and then look at the name for that dentry - that way
 // we can be sure that at least d_iname is defined - and can look
 // for the cstring there.
-int populate_dentry_struct_offsets(CPUState *env, gva_t dentry, ProcInfo* pPI)
+int vxworks_populate_dentry_struct_offsets(CPUState *env, gva_t dentry, ProcInfo* pPI)
 {
   static bool isOffsetPopulated = false;
   if (isOffsetPopulated)
@@ -1350,7 +1350,7 @@ int populate_dentry_struct_offsets(CPUState *env, gva_t dentry, ProcInfo* pPI)
     return (-1);
   }
 
-  if (!isStructKernelAddress(dentry, MAX_DENTRY_STRUCT_SEARCH_SIZE))
+  if (!vxworks_isStructKernelAddress(dentry, MAX_DENTRY_STRUCT_SEARCH_SIZE))
   {
     return (-1);
   }
@@ -1382,20 +1382,20 @@ int populate_dentry_struct_offsets(CPUState *env, gva_t dentry, ProcInfo* pPI)
   {
     //d_parent is preceded by an hlist - so we look for that first
     if ( 
-         !isKernelAddressOrNULL(get_target_ulong_at(env, dentry+i)) 
-         || !isKernelAddressOrNULL(get_target_ulong_at(env, dentry+i+sizeof(target_ulong)))
+         !vxworks_isKernelAddressOrNULL(vxworks_get_target_ulong_at(env, dentry+i)) 
+         || !vxworks_isKernelAddressOrNULL(vxworks_get_target_ulong_at(env, dentry+i+sizeof(target_ulong)))
        )
     {
       continue;
     }
 
-    parent = get_target_ulong_at(env, dentry+i+sizeof(target_ulong) + sizeof(target_ulong));
-    if (isStructKernelAddress(parent, MAX_DENTRY_STRUCT_SEARCH_SIZE))
+    parent = vxworks_get_target_ulong_at(env, dentry+i+sizeof(target_ulong) + sizeof(target_ulong));
+    if (vxworks_isStructKernelAddress(parent, MAX_DENTRY_STRUCT_SEARCH_SIZE))
     {
       if (DECAF_read_mem(env, parent + pPI->dentry_d_iname, sizeof(target_ulong), &chr) < 0)
         return (-1); // once the memory read fails, we won't want to populate offsets any more
 
-      if (isPrintableASCII(chr))
+      if (vxworks_isPrintableASCII(chr))
       {
         //monitor_printf(default_mon, "CHAR2 %c \n", chr);
         if (pPI->dentry_d_parent == INV_OFFSET)
@@ -1417,7 +1417,7 @@ int populate_dentry_struct_offsets(CPUState *env, gva_t dentry, ProcInfo* pPI)
 //runs through the guest's memory and populates the offsets within the
 // ProcInfo data structure. Returns the number of elements/offsets found
 // or -1 if error
-int populate_kernel_offsets(CPUState *env, gva_t threadinfo, ProcInfo* pPI)
+int vxworks_populate_kernel_offsets(CPUState *env, gva_t threadinfo, ProcInfo* pPI)
 {
   static bool isOffsetPopulated = false;
   //first we will try to get the threadinfo structure and etc
@@ -1441,34 +1441,34 @@ int populate_kernel_offsets(CPUState *env, gva_t threadinfo, ProcInfo* pPI)
     return (0);
   }
 
-  if ((taskstruct = findTaskStructFromThreadInfo(env, threadinfo, pPI, 0)) == INV_ADDR)
+  if ((taskstruct = vxworks_findTaskStructFromThreadInfo(env, threadinfo, pPI, 0)) == INV_ADDR)
     return (-1);
 
   //monitor_printf(default_mon,  "ThreadInfo @ [0x%"T_FMT"x]\n", threadinfo);
   //monitor_printf(default_mon,  "task_struct @ [0x%"T_FMT"x] TSOFFSET = %"T_FMT"d, TIOFFSET = %"T_FMT"d\n", taskstruct, pPI->ti_task, pPI->ts_stack);
-  if ((mmstruct = findMMStructFromTaskStruct(env, taskstruct, pPI, 0)) == INV_ADDR)
+  if ((mmstruct = vxworks_findMMStructFromTaskStruct(env, taskstruct, pPI, 0)) == INV_ADDR)
     return (-1);
   //monitor_printf(default_mon,  "mm_struct @ [0x%"T_FMT"x] mmOFFSET = %"T_FMT"d, pgdOFFSET = %"T_FMT"d\n", mmstruct, pPI->ts_mm, pPI->mm_pgd);
-  if (findTaskStructListFromTaskStruct(env, taskstruct, pPI, 0) == INV_ADDR)
+  if (vxworks_findTaskStructListFromTaskStruct(env, taskstruct, pPI, 0) == INV_ADDR)
     return (-1);
   //monitor_printf(default_mon,  "task_struct offset = %"T_FMT"d\n", pPI->ts_tasks);
 
-  if (findRealParentGroupLeaderFromTaskStruct(env, taskstruct, pPI) == INV_ADDR)
+  if (vxworks_findRealParentGroupLeaderFromTaskStruct(env, taskstruct, pPI) == INV_ADDR)
     return (-1);
   //monitor_printf(default_mon,  "real_parent = %"T_FMT"x, group_leader = %"T_FMT"x\n", pPI->ts_real_parent, pPI->ts_group_leader);
 
   //we need the group leader - since current might just be a thread - we need a real task
-  gl = get_target_ulong_at(env, taskstruct + pPI->ts_group_leader);
-  ret = findCommFromTaskStruct(env, gl, pPI);
+  gl = vxworks_get_target_ulong_at(env, taskstruct + pPI->ts_group_leader);
+  ret = vxworks_findCommFromTaskStruct(env, gl, pPI);
 
   //don't forget to to get back to the head of the task struct
   // by subtracting ts_tasks offset
-  tempTask = get_target_ulong_at(env, gl + pPI->ts_tasks) - pPI->ts_tasks;
-  while ((ret == INV_ADDR) && (tempTask != gl) && (isKernelAddress(tempTask)))
+  tempTask = vxworks_get_target_ulong_at(env, gl + pPI->ts_tasks) - pPI->ts_tasks;
+  while ((ret == INV_ADDR) && (tempTask != gl) && (vxworks_isKernelAddress(tempTask)))
   {
-    ret = findCommFromTaskStruct(env, tempTask, pPI);
+    ret = vxworks_findCommFromTaskStruct(env, tempTask, pPI);
     //move to the next task_struct
-    tempTask = get_target_ulong_at(env, tempTask + pPI->ts_tasks) - pPI->ts_tasks;
+    tempTask = vxworks_get_target_ulong_at(env, tempTask + pPI->ts_tasks) - pPI->ts_tasks;
   }
 
   if (ret != INV_ADDR)
@@ -1479,21 +1479,21 @@ int populate_kernel_offsets(CPUState *env, gva_t threadinfo, ProcInfo* pPI)
     return (-1);
   }
 
-  if (findCredFromTaskStruct(env, taskstruct, pPI) == INV_ADDR)
+  if (vxworks_findCredFromTaskStruct(env, taskstruct, pPI) == INV_ADDR)
     return (-1);
   //printk(KERN_INFO "real_cred = %"T_FMT"d, cred = %"T_FMT"d \n", pPI->ts_real_cred, pPI->ts_cred);
 
-  if (findPIDFromTaskStruct(env, taskstruct, pPI) == INV_ADDR)
+  if (vxworks_findPIDFromTaskStruct(env, taskstruct, pPI) == INV_ADDR)
     return (-1);
   //printk(KERN_INFO "pid = %"T_FMT"d, tgid = %"T_FMT"d \n", pPI->ts_pid, pPI->ts_tgid);
 
   //For this next test, I am just going to use the task struct lists
-  if (findThreadGroupFromTaskStruct(env, pPI->init_task_addr, pPI) == INV_ADDR)
+  if (vxworks_findThreadGroupFromTaskStruct(env, pPI->init_task_addr, pPI) == INV_ADDR)
     return (-1);
   //printk(KERN_INFO "Thread_group offset is %"T_FMT"d\n", pPI->ts_thread_group);
 
-  realcred = get_target_ulong_at(env, taskstruct + pPI->ts_real_cred);
-  if (populate_cred_struct_offsets(env, realcred, pPI) != 0)
+  realcred = vxworks_get_target_ulong_at(env, taskstruct + pPI->ts_real_cred);
+  if (vxworks_populate_cred_struct_offsets(env, realcred, pPI) != 0)
     return (-1);
 
   isOffsetPopulated = true;
@@ -1501,7 +1501,8 @@ int populate_kernel_offsets(CPUState *env, gva_t threadinfo, ProcInfo* pPI)
 }
 
 
-int printProcInfo(ProcInfo* pPI)
+#if 0
+int vxworks_printProcInfo(ProcInfo* pPI)
 {
   if (pPI == NULL)
   {
@@ -1599,8 +1600,9 @@ int printProcInfo(ProcInfo* pPI)
 
   return (0);
 }
+#endif
 
-void get_executable_directory(string &sPath)
+void vxworks_get_executable_directory(string &sPath)
 {
   int rval;
   char szPath[1024];
@@ -1618,16 +1620,16 @@ void get_executable_directory(string &sPath)
   return;
 }
 
-void get_procinfo_directory(string &sPath)
+void vxworks_get_procinfo_directory(string &sPath)
 {
-  get_executable_directory(sPath);
+  vxworks_get_executable_directory(sPath);
   sPath += "../shared/kernelinfo/procinfo_generic/";
   return;
 }
 
 // given the section number, load the offset values
 #define FILL_TARGET_ULONG_FIELD(field) pi.field = pt.get<target_ulong>(sSectionNum + #field)
-void _load_one_section(const boost::property_tree::ptree &pt, int iSectionNum, ProcInfo &pi)
+void vxworks_load_one_section(const boost::property_tree::ptree &pt, int iSectionNum, ProcInfo &pi)
 {
     string sSectionNum;
 
@@ -1642,63 +1644,45 @@ void _load_one_section(const boost::property_tree::ptree &pt, int iSectionNum, P
     pi.strName[SIZE_OF_STR_NAME-1] = '\0';
 
     // fill other fields
-    FILL_TARGET_ULONG_FIELD(init_task_addr  );
-    FILL_TARGET_ULONG_FIELD(init_task_size  );
-    FILL_TARGET_ULONG_FIELD(ts_tasks        );
-    FILL_TARGET_ULONG_FIELD(ts_pid          );
-    FILL_TARGET_ULONG_FIELD(ts_tgid         );
-    FILL_TARGET_ULONG_FIELD(ts_group_leader );
-    FILL_TARGET_ULONG_FIELD(ts_thread_group );
-    FILL_TARGET_ULONG_FIELD(ts_real_parent  );
-    FILL_TARGET_ULONG_FIELD(ts_mm           );
-    FILL_TARGET_ULONG_FIELD(ts_stack        );
-    FILL_TARGET_ULONG_FIELD(ts_real_cred    );
-    FILL_TARGET_ULONG_FIELD(ts_cred         );
-    FILL_TARGET_ULONG_FIELD(ts_comm         );
-    FILL_TARGET_ULONG_FIELD(cred_uid        );
-    FILL_TARGET_ULONG_FIELD(cred_gid        );
-    FILL_TARGET_ULONG_FIELD(cred_euid       );
-    FILL_TARGET_ULONG_FIELD(cred_egid       );
-    FILL_TARGET_ULONG_FIELD(mm_mmap         );
-    FILL_TARGET_ULONG_FIELD(mm_pgd          );
-    FILL_TARGET_ULONG_FIELD(mm_arg_start    );
-    FILL_TARGET_ULONG_FIELD(mm_start_brk    );
-    FILL_TARGET_ULONG_FIELD(mm_brk          );
-    FILL_TARGET_ULONG_FIELD(mm_start_stack  );
-    FILL_TARGET_ULONG_FIELD(vma_vm_start    );
-    FILL_TARGET_ULONG_FIELD(vma_vm_end      );
-    FILL_TARGET_ULONG_FIELD(vma_vm_next     );
-    FILL_TARGET_ULONG_FIELD(vma_vm_file     );
-    FILL_TARGET_ULONG_FIELD(vma_vm_flags    );
-    FILL_TARGET_ULONG_FIELD(vma_vm_pgoff    );
-    FILL_TARGET_ULONG_FIELD(file_dentry     );
-    FILL_TARGET_ULONG_FIELD(dentry_d_name   );
-    FILL_TARGET_ULONG_FIELD(dentry_d_iname  );
-    FILL_TARGET_ULONG_FIELD(dentry_d_parent );
-    FILL_TARGET_ULONG_FIELD(ti_task         );
-#ifdef TARGET_MIPS
-    FILL_TARGET_ULONG_FIELD(mips_pgd_current);
-#endif
+    FILL_TARGET_ULONG_FIELD(version); 
+    FILL_TARGET_ULONG_FIELD(logtaskid_addr);
+    FILL_TARGET_ULONG_FIELD(logtask_addr);
+    FILL_TARGET_ULONG_FIELD(ts_next);
+    FILL_TARGET_ULONG_FIELD(ts_prev); 
+    FILL_TARGET_ULONG_FIELD(ts_entry);
+
 }
 
 // find the corresponding section for the current os and return the section number
-int find_match_section(const boost::property_tree::ptree &pt, target_ulong tulInitTaskAddr)
+int vxworks_find_match_section(CPUState * env, const boost::property_tree::ptree &pt)
 {
     int cntSection = pt.get("info.total", 0);
 
     string sSectionNum;
     vector<int> vMatchNum;
 
-    monitor_printf(default_mon, "Total Sections: %d\n", cntSection);
+//    monitor_printf(default_mon, "Total Sections: %d\n", cntSection);
 
     for(int i = 1; i<=cntSection; ++i)
     {
       sSectionNum = boost::lexical_cast<string>(i);
-      target_ulong tulAddr = pt.get<target_ulong>(sSectionNum + ".init_task_addr");
-      if(tulAddr == tulInitTaskAddr)
+      target_ulong logtaskid_addr = pt.get<target_ulong>(sSectionNum + ".logtaskid_addr");
+      target_ulong logAddr = pt.get<target_ulong>(sSectionNum + ".logtask_addr");
+
+      DECAF_read_ptr(env, logtaskid_addr, &logtaskid_addr);
+
+//      monitor_printf(default_mon, "Readlogid: %x ,Logaddr: %x \n", logtaskid_addr, logAddr);
+
+      if(logAddr == logtaskid_addr)
       {
         vMatchNum.push_back(i);
       }
+    }
+
+    if(vMatchNum.size() <= 0)
+    {
+      //monitor_printf(default_mon, "No match in procinfo.ini\n");
+      return 0;        
     }
 
     if(vMatchNum.size() > 1)
@@ -1737,11 +1721,6 @@ int find_match_section(const boost::property_tree::ptree &pt, target_ulong tulIn
       // }
     }
     
-    if(vMatchNum.size() <= 0)
-    {
-      monitor_printf(default_mon, "No match in procinfo.ini\n");
-      return 0;        
-    }
 
     return vMatchNum[0];
 }
@@ -1750,7 +1729,7 @@ int find_match_section(const boost::property_tree::ptree &pt, target_ulong tulIn
 
 // infer init_task_addr, use the init_task_addr to search for the corresponding
 // section in procinfo.ini. If found, fill the fields in ProcInfo struct.
-int load_proc_info(CPUState * env, gva_t threadinfo, ProcInfo &pi)
+int vxworks_load_proc_info(CPUState * env, ProcInfo &pi)
 {
   static bool bProcinfoMisconfigured = false;
   const int CANNOT_FIND_INIT_TASK_STRUCT = -1;
@@ -1759,44 +1738,42 @@ int load_proc_info(CPUState * env, gva_t threadinfo, ProcInfo &pi)
   target_ulong tulInitTaskAddr;
 
   if(bProcinfoMisconfigured)
-  {
-   return CANNOT_MATCH_PROCINFO_SECTION;
-  }
-
+	  return CANNOT_MATCH_PROCINFO_SECTION;
+/*
   // find init_task_addr
-  tulInitTaskAddr = findTaskStructFromThreadInfo(env, threadinfo, &pi, 0);
-  monitor_printf(default_mon, "findTaskStructFromThreadInfo: %x\n",tulInitTaskAddr);
+  tulInitTaskAddr = vxworks_findTaskStructFromThreadInfo(env, threadinfo, &pi, 0);
   // tulInitTaskAddr = 2154330880;
   if (INV_ADDR == tulInitTaskAddr)
   {
     return CANNOT_FIND_INIT_TASK_STRUCT;
   }
+  */
 
   string sProcInfoPath;
   boost::property_tree::ptree pt;
-  get_procinfo_directory(sProcInfoPath);
-  sProcInfoPath += "procinfo.ini";
-  monitor_printf(default_mon, "Procinfo path: %s\n",sProcInfoPath.c_str());
+  vxworks_get_procinfo_directory(sProcInfoPath);
+  sProcInfoPath += "vxworks_procinfo.ini";
   // read procinfo.ini
   if (0 != access(sProcInfoPath.c_str(), 0))
   {
-      monitor_printf(default_mon, "can't open %s\n", sProcInfoPath.c_str());
+     //xly  monitor_printf(default_mon, "can't open %s\n", sProcInfoPath.c_str());
       return CANNOT_OPEN_PROCINFO;
   }
   boost::property_tree::ini_parser::read_ini(sProcInfoPath, pt);
 
   // find the match section using previously found init_task_addr
-  int iSectionNum = find_match_section(pt, tulInitTaskAddr);
+  int iSectionNum = vxworks_find_match_section(env, pt);
   // no match or too many match sections
+
   if(0 == iSectionNum)
   {
-    monitor_printf(default_mon, "VMI won't work.\nPlease configure procinfo.ini and restart DECAF.\n");
+    //monitor_printf(default_mon, "VMI won't work.\nPlease configure procinfo.ini and restart DECAF.\n");
     // exit(0);
-    bProcinfoMisconfigured = true;
+    //bProcinfoMisconfigured = true;
     return CANNOT_MATCH_PROCINFO_SECTION;
   }
 
-  _load_one_section(pt, iSectionNum, pi);
+  vxworks_load_one_section(pt, iSectionNum, pi);
   monitor_printf(default_mon, "Match %s\n", pi.strName);
   return 0;
 }
@@ -1816,7 +1793,7 @@ private:
   bool init_property_tree(const char* strName)
   {
     string sLibConfPath;
-    get_procinfo_directory(sLibConfPath);
+    vxworks_get_procinfo_directory(sLibConfPath);
     const string LIB_CONF_DIR = "lib_conf/";
     sLibConfPath = sLibConfPath + LIB_CONF_DIR + strName + ".ini";
 
@@ -1842,7 +1819,7 @@ private:
     for(int i = 1; i<=cntSection; ++i)
     {
       sSectionNum = boost::lexical_cast<string>(i);
-      m_cur_libpath = m_pt.get<string>(sSectionNum + "." + LIBPATH_PROPERTY_NAME);
+      m_cur_libpath = m_pt.get<string>(sSectionNum + "." + VXWORKS_LIBPATH_PROPERTY_NAME);
       m_cur_section = &m_pt.get_child(sSectionNum);
       load_cur_section();
     }
@@ -1854,7 +1831,7 @@ private:
     // traverse the section
     BOOST_FOREACH(boost::property_tree::ptree::value_type &v, *m_cur_section)
     {
-      if(!v.first.compare(LIBPATH_PROPERTY_NAME))
+      if(!v.first.compare(VXWORKS_LIBPATH_PROPERTY_NAME))
       {
         continue;
       }
@@ -1869,12 +1846,12 @@ private:
   string m_cur_libpath;
   boost::property_tree::ptree *m_cur_section;
 public:
-  static const string LIBPATH_PROPERTY_NAME;
+  static const string VXWORKS_LIBPATH_PROPERTY_NAME;
 };
 
-const string LibraryLoader::LIBPATH_PROPERTY_NAME = "decaf_conf_libpath";
+const string LibraryLoader::VXWORKS_LIBPATH_PROPERTY_NAME = "decaf_conf_libpath";
 
-void load_library_info(const char *strName)
+void vxworks_load_library_info(const char *strName)
 {
   LibraryLoader loader(strName);
 }

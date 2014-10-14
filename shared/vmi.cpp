@@ -32,6 +32,7 @@ extern "C" {
 #endif /* __cplusplus */
 #include "windows_vmi.h"
 #include "linux_vmi.h"
+#include "vxworks_vmi.h"
 #include "ucore_vmi.h"
 
 #include "hookapi.h"
@@ -65,6 +66,7 @@ static os_handle_c handle_funds_c[] = {
 		{ WIN7_SP0_C, &find_win7sp0, &win_vmi_init, },
 		{ WIN7_SP1_C, &find_win7sp1, &win_vmi_init, },
 		{ UCORE_C, &find_ucore, &ucore_vmi_init, },
+		{ VXWORKS_GENERIC_C, &find_vxworks, &vxworks_vmi_init,},
 #endif
 		{ LINUX_GENERIC_C, &find_linux, &linux_vmi_init,},
 };
@@ -96,8 +98,10 @@ static void block_end_cb(DECAF_Callback_Params* temp)
 	else if(GuestOS_index_c == 2 || GuestOS_index_c == 3)
 		monitor_printf(default_mon, "its win 7 \n");
 	else if(GuestOS_index_c == 4)
-		monitor_printf(default_mon, "its ucore\n");
+		monitor_printf(default_mon, "its ucore \n");
 	else if(GuestOS_index_c == 5) 
+		monitor_printf(default_mon, "its vxworks \n");
+	else if(GuestOS_index_c == 6) 
 		monitor_printf(default_mon, "its linux \n");
 #endif
 
