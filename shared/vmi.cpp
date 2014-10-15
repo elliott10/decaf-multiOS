@@ -143,6 +143,24 @@ process * VMI_find_process_by_pgd(uint32_t pgd)
 	return NULL;
 }
 
+process * VMI_find_process_by_ebp(uint32_t ebp)
+{
+    unordered_map < uint32_t, process * >::iterator iter;
+
+    for (iter = process_pid_map.begin(); iter != process_pid_map.end(); iter++) {
+	process * proc = iter->second;
+
+	if(ebp <= proc->ebp && ebp >= proc->ts_ebp_limit)
+		{
+	//monitor_printf(default_mon, "find_EBP: [%x], procname: [%s] \n", proc->ebp, proc->name);
+
+		return proc;
+		}
+	}
+
+	return NULL;
+}
+
 
 process *VMI_find_process_by_pid(uint32_t pid)
 {

@@ -1650,6 +1650,12 @@ void vxworks_load_one_section(const boost::property_tree::ptree &pt, int iSectio
     FILL_TARGET_ULONG_FIELD(ts_next);
     FILL_TARGET_ULONG_FIELD(ts_prev); 
     FILL_TARGET_ULONG_FIELD(ts_entry);
+    FILL_TARGET_ULONG_FIELD(ts_mm); 
+    FILL_TARGET_ULONG_FIELD(ts_name); 
+    FILL_TARGET_ULONG_FIELD(ts_status); 
+    FILL_TARGET_ULONG_FIELD(ts_priority); 
+    FILL_TARGET_ULONG_FIELD(ts_ebp); 
+    FILL_TARGET_ULONG_FIELD(ts_ebp_limit); 
 
 }
 

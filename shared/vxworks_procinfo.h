@@ -19,6 +19,11 @@ typedef struct _ProcInfo
 	target_ulong ts_next;
 	target_ulong ts_prev;
 	target_ulong ts_entry;
+	target_ulong ts_name;
+	target_ulong ts_status;
+	target_ulong ts_priority;
+	target_ulong ts_ebp;
+	target_ulong ts_ebp_limit;
 
 	target_ulong init_task_addr;
 	target_ulong init_task_size;

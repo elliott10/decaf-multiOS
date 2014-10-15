@@ -55,6 +55,8 @@ extern "C" {
 using namespace std;
 using namespace std::tr1;
 
+extern uint32_t GuestOS_index_c;
+
 //#ifdef CONFIG_VMI_ENABLE
 //keep the sized same with that defined in vmi.h
 #define MODULE_NAME_SIZE 32
@@ -229,19 +231,36 @@ int VMI_list_processes(Monitor *mon)
 {
 	process *proc;
 	unordered_map<uint32_t, process *>::iterator iter;
-//chy use process_pid_map to list processes
-	for (iter = process_pid_map.begin(); iter != process_pid_map.end(); iter++) {
-		proc = iter->second;
-		monitor_printf(mon, "%d\tcr3=0x%08x\t%s\n", proc->pid, proc->cr3,
-				proc->name);
+
+	if(GuestOS_index_c == 4)
+	{
+		monitor_printf(mon, "*****UCORE*****\n");
+		for (iter = process_pid_map.begin(); iter != process_pid_map.end(); iter++) {
+			proc = iter->second;
+			monitor_printf(mon, "%d\tcr3=0x%08x\t%s\n", proc->pid, proc->cr3,
+					proc->name);
+		}
 	}
-#if 0
-	for (iter = process_map.begin(); iter != process_map.end(); iter++) {
-		proc = iter->second;
-		monitor_printf(mon, "%d\tcr3=0x%08x\t%s\n", proc->pid, proc->cr3,
-					   proc->name);
+	else if(GuestOS_index_c == 5)
+	{
+		monitor_printf(mon, "*****VXWORKS*****\n");
+		for (iter = process_pid_map.begin(); iter != process_pid_map.end(); iter++) {
+			proc = iter->second;
+			monitor_printf(mon, "0x%x\tcr3=0x%08x\t%s\n", proc->pid, proc->cr3,
+					proc->name);
+		}
+
 	}
-#endif
+	else
+	{
+
+		for (iter = process_map.begin(); iter != process_map.end(); iter++) {
+			proc = iter->second;
+			monitor_printf(mon, "%d\tcr3=0x%08x\t%s\n", proc->pid, proc->cr3,
+					proc->name);
+		}
+	}
+
 	return 0;
 }
 

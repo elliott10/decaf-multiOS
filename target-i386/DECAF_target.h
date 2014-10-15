@@ -377,6 +377,12 @@ static inline gva_t DECAF_getESP(CPUState* env)
   return (env->regs[R_ESP]);
 }
 
+//vxworks
+static inline gva_t DECAF_getEBP(CPUState* env)
+{
+  return (env->regs[R_EBP]);
+}
+
 #ifdef __cplusplus
 }
 #endif // __cplusplus

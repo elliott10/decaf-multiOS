@@ -25,6 +25,8 @@ using namespace std::tr1;
 #define NAMESIZEC 16
 #define MAX_NAME_LENGTHC 64
 
+//uint32_t GuestOS_index_c=11;
+
 
 class module{
 public:
@@ -53,6 +55,13 @@ public:
     //a set of virtual pages that have been resolved with module information
     unordered_set< uint32_t > resolved_pages;
     unordered_map< uint32_t, int > unresolved_pages;
+
+    //vxworks
+    uint32_t entry;
+    uint32_t status;
+    uint32_t priority;
+    uint32_t ebp;
+    uint32_t ts_ebp_limit;
 };
 
 
@@ -83,6 +92,8 @@ module * VMI_find_module_by_base(target_ulong pgd, uint32_t base);
 process * VMI_find_process_by_pid(uint32_t pid);
 
 process * VMI_find_process_by_pgd(uint32_t pgd);
+
+process * VMI_find_process_by_ebp(uint32_t ebp);
 
 process* VMI_find_process_by_name(const char *name);
 

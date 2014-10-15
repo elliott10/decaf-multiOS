@@ -747,56 +747,62 @@ next:
 // scan the task list and find new process
 static
 process * vxworks_find_new_process(CPUState *env, uint32_t cr3) {
-	uint32_t task_pid = 0, ts_parent_pid = 0, proc_cr3 = -1;
+	uint32_t proc_cr3 = -1;
 	const int MAX_LOOP_COUNT = 1024; // maximum loop count when trying to find a new process (will there be any?)
+	int bk = 0;
 	process *right_proc = NULL;
 
 	//static target_ulong _last_next_task = 0;// another way to speed up: when the last task remain the same, return immediately
 
 	//uint32_t _last_task_pid = last_task_pid;
-	target_ulong next_task, ts_real_parent, mm, task_pgd;
-	next_task = OFFSET_PROFILE.init_task_addr;
+	target_ulong log_task, tcb_task, task_name, task_list, list_offset;
+	tcb_task = OFFSET_PROFILE.logtaskid_addr;
+	DECAF_read_ptr(env, tcb_task, &tcb_task);
+	log_task = tcb_task;
+
+	list_offset = OFFSET_PROFILE.ts_next; 
 
 	// avoid infinite loop
 	for (int count = MAX_LOOP_COUNT; count > 0; --count)
 	{
-
-		// NOTICE by reading next_task at the beginning, we are skipping the "swapper" task
-		// highly likely vxworks add the latest process to the tail of the linked list, so we go backward here
-		BREAK_IF(DECAF_read_ptr(env, 
-			next_task + (OFFSET_PROFILE.ts_tasks + sizeof(target_ptr)),
-			&next_task) < 0);
-
-		// NOTE - tasks is a list_head, so we need to minus offset to get the base address
-		next_task -= OFFSET_PROFILE.ts_tasks;
-/*		if (_last_next_task == next_task
-				|| next_task == OFFSET_PROFILE.init_task_addr) {// we have traversed the whole link list, or no new process
-			break;
-		}*/
-
+		/*
 		if(OFFSET_PROFILE.init_task_addr == next_task)
 		{
 			break;
 		}
-
-		// read task pid, jump out directly when we fail
-		BREAK_IF(DECAF_read_ptr(env,
-			next_task + OFFSET_PROFILE.ts_tgid,
-			&task_pid) < 0);
+		*/
 
 		BREAK_IF(DECAF_read_ptr(env,
-			next_task + OFFSET_PROFILE.ts_mm,
+			tcb_task + list_offset,
+			&task_list) < 0);
+
+		tcb_task = task_list - OFFSET_PROFILE.ts_prev;
+
+		//first prev_link_info get,now next_link_info get
+		if(task_list == 0)
+			{
+//			monitor_printf(default_mon, "BREAK! \n");
+				BREAK_IF(bk);
+				bk = 1;
+				tcb_task = log_task;
+				list_offset = OFFSET_PROFILE.ts_prev;
+			}
+/*
+		BREAK_IF(DECAF_read_ptr(env,
+			log_task + OFFSET_PROFILE.ts_mm,
 			&mm) < 0);
+		*/
 
 		// // NOTICE kernel thread does not own a process address space, thus its mm is NULL. It uses active_mm instead
 		// if (populate_mm_struct_offsets(env, mm, &OFFSET_PROFILE))
 		// 	continue;	// try until we get it.
 
+		/*
 		if (mm != 0)
 		{ 	// for user-processes
 			// we read the value of active_mm into mm here
 			BREAK_IF(DECAF_read_ptr(env,
-					next_task + OFFSET_PROFILE.ts_mm + sizeof(target_ptr),
+					tcb_task + OFFSET_PROFILE.ts_mm + sizeof(target_ptr),
 					&mm) < 0
 					||
 					DECAF_read_ptr(env,
@@ -809,8 +815,11 @@ process * vxworks_find_new_process(CPUState *env, uint32_t cr3) {
 		{	// for kernel threads
 			proc_cr3 = -1;// when proc_cr3 is -1UL, we cannot find the process by findProcessByCR3(), but we still can do findProcessByPid()
 		}
+		*/
 
-		if (!VMI_find_process_by_pgd(proc_cr3)) {
+		//if (!VMI_find_process_by_pgd(proc_cr3)) {
+		if (!VMI_find_process_by_pid(tcb_task)) {
+			/*
 			// get parent task's base address
 			BREAK_IF(DECAF_read_ptr(env,
 					next_task + OFFSET_PROFILE.ts_real_parent,
@@ -819,23 +828,43 @@ process * vxworks_find_new_process(CPUState *env, uint32_t cr3) {
 					DECAF_read_ptr(env,
 					ts_real_parent + OFFSET_PROFILE.ts_tgid,
 					&ts_parent_pid) < 0);
-
+			*/
 			process* pe = new process();
-			pe->pid = task_pid;
-			pe->parent_pid = ts_parent_pid;
-			pe->cr3 = proc_cr3;
-			pe->EPROC_base_addr = next_task; // store current task_struct's base address
+			pe->pid = tcb_task;
+			//pe->parent_pid = ts_parent_pid;
+		//	pe->cr3 = proc_cr3;
+			pe->EPROC_base_addr = tcb_task; // store current task_struct's base address
+
+			BREAK_IF(DECAF_read_ptr(env, tcb_task + OFFSET_PROFILE.ts_name, &task_name) < 0);
 			BREAK_IF(DECAF_read_mem(env,
-					next_task + OFFSET_PROFILE.ts_comm,
+					task_name,
 					SIZEOF_COMM, pe->name) < 0);
+
+			BREAK_IF(DECAF_read_ptr(env, tcb_task + OFFSET_PROFILE.ts_ebp, &pe->ebp) < 0);
+			BREAK_IF(DECAF_read_ptr(env, tcb_task + OFFSET_PROFILE.ts_entry, &pe->entry) < 0);
+			BREAK_IF(DECAF_read_ptr(env, tcb_task + OFFSET_PROFILE.ts_status, &pe->status) < 0);
+			BREAK_IF(DECAF_read_ptr(env, tcb_task + OFFSET_PROFILE.ts_priority, &pe->priority) < 0);
+			BREAK_IF(DECAF_read_ptr(env, tcb_task + OFFSET_PROFILE.ts_ebp_limit, &pe->ts_ebp_limit) < 0);
+
 			VMI_create_process(pe);
 
-			//monitor_printf(default_mon, "new proc = %s, pid = %d, parent_pid = %d \n", pe->name, pe->pid, pe->parent_pid);
+//			monitor_printf(default_mon, "new proc = %s, entry = %x, TCB = %x, EBP_limit = %x, status = %d, priority = %d \n", pe->name, pe->entry, pe->EPROC_base_addr, pe->ts_ebp_limit, pe->status, pe->priority);
+
+
+			if(cr3 <= pe->ebp && cr3 >= pe->ts_ebp_limit)
+			{
+				monitor_printf(default_mon,"found new process!!!\n");
+				right_proc = pe;
+			}
+
+			/*
 			if (cr3 == proc_cr3) {// for kernel thread, we are going to return NULL
 				// NOTICE we may find multiple processes in this function, but we only return the current one
 				right_proc = pe;
 			}
+			*/
 		}
+
 	}
 
 	//last_task_pid = _last_task_pid;
@@ -862,21 +891,24 @@ void vxworks_tlb_call_back(DECAF_Callback_Params *temp)
 {
 	CPUState *ourenv = temp->tx.env;
 	uint32_t vaddr = temp->tx.vaddr;
-	uint32_t pgd = -1;
+	uint32_t ebp = -1;
 	process *proc = NULL;
 	bool found_new = false;
-	pgd = DECAF_getPGD(ourenv);
-
-
+	ebp = DECAF_getEBP(ourenv);
+	//pgd = DECAF_getPGD(ourenv);
+	//monitor_printf(default_mon, "DECAF_getEBP: [%x] \n", ebp);
+	
 	//TODO: kernel modules are not retrieved in the current implementation.
+	/*
 	if (DECAF_is_in_kernel(ourenv)) {
 		//proc = kernel_proc;
 	}
-	else if ( (proc = VMI_find_process_by_pgd(pgd)) == NULL) {
-		found_new = ((proc = vxworks_find_new_process(ourenv, pgd)) != NULL);
+	else */if ( (proc = VMI_find_process_by_ebp(ebp)) == NULL) {
+		found_new = ((proc = vxworks_find_new_process(ourenv, ebp)) != NULL);
 	}
 
-	if (proc) {	// we are not scanning modules for kernel threads, since kernel thread's cr3 is -1UL, the proc should be null
+//	if (proc) {	// we are not scanning modules for kernel threads, since kernel thread's cr3 is -1UL, the proc should be null
+if(0){
 
 		if ( !vxworks_is_vm_page_resolved(proc, vaddr) ) {
 			char task_comm[SIZEOF_COMM];
@@ -1021,9 +1053,11 @@ void vxworks_vmi_init()
 
 	DECAF_register_callback(DECAF_TLB_EXEC_CB, vxworks_tlb_call_back, NULL);
 
+	/*
 	recon_timer = qemu_new_timer_ns(vm_clock, vxworks_check_procexit, 0);
 	qemu_mod_timer(recon_timer,
 				   qemu_get_clock_ns(vm_clock) + get_ticks_per_sec() * 20);
+	*/
 
 }
 
