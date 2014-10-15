@@ -394,6 +394,7 @@ int ucore_load_proc_info(CPUState * env, UcoreProcInfo &pi)
   {
    return CANNOT_MATCH_PROCINFO_SECTION;
   }
+  monitor_printf(default_mon, "ucore search\n");
 
   string sProcInfoPath;
   boost::property_tree::ptree pt;

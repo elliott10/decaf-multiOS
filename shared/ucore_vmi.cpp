@@ -343,6 +343,20 @@ int ucore_list_processes(void)
 void ucore_tlb_call_back(DECAF_Callback_Params *temp)
 {
 	CPUState *ourenv = temp->tx.env;
+	uint32_t vaddr = temp->tx.vaddr;
+	uint32_t pgd = -1;
+	//process *proc = NULL;
+	bool found_new = false;
+	pgd = DECAF_getPGD(ourenv);
+
+	/*
+	if ( (proc = VMI_find_process_by_pgd(pgd)) == NULL) {
+		found_new = ((proc = find_new_process(ourenv, pgd)) != NULL);
+	}
+	*/
+        monitor_printf(default_mon, "ucore_get_PGD: %x\n",pgd);
+
+
 	process *proc = ucore_find_new_process(ourenv);
 	if(proc) { //fork or exec
 		ucore_get_new_modules(ourenv, proc);
@@ -467,6 +481,17 @@ static void ucore_parse_function(void)
 // to see whether this is a ucore or not,
 // the trick is to check the init_thread_info, init_task
 int find_ucore(CPUState *env, uintptr_t insn_handle) {
+
+	target_ulong ESP_info = DECAF_getESP(env);
+	static target_ulong last_ESP_info = 0;
+
+    //monitor_printf(default_mon, "ucore ESP: 0x%x \n", ESP_info);
+	//to see whether ucore ESP is booting or not
+	if (ESP_info == last_ESP_info || ESP_info < 0xc0000000)
+		return 0;
+
+	last_ESP_info = ESP_info;
+
     if(0 != ucore_load_proc_info(env, uop)){
 	return 0;
     }
