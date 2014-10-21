@@ -271,6 +271,26 @@ void DECAF_flushTranslationPage_env(CPUState* env, uint32_t addr)
 	}
 }
 
+//xly
+void do_user_mon(Monitor *mon, const QDict *qdict)
+{
+  int integer = -1;
+
+  if (qdict_haskey(qdict, "integer"))
+  {
+    integer = qdict_get_int(qdict, "integer");
+  }    
+ 
+  if (integer == -1)
+  {
+    monitor_printf(mon, "need a integer\n");
+  }
+
+	monitor_printf(mon, "Just a user_mon test: integer [%x]\n",integer);
+
+}
+
+
 int do_load_plugin(Monitor *mon, const QDict *qdict, QObject **ret_data) {
 	do_load_plugin_internal(mon, qdict_get_str(qdict, "filename"));
 	return (0);

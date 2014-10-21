@@ -231,25 +231,29 @@ int VMI_list_processes(Monitor *mon)
 {
 	process *proc;
 	unordered_map<uint32_t, process *>::iterator iter;
+	int c = 0;
 
 	if(GuestOS_index_c == 4)
 	{
-		monitor_printf(mon, "*****UCORE*****\n");
+		monitor_printf(mon, "\n*****UCORE*****\n\n");
 		for (iter = process_pid_map.begin(); iter != process_pid_map.end(); iter++) {
 			proc = iter->second;
 			monitor_printf(mon, "%d\tcr3=0x%08x\t%s\n", proc->pid, proc->cr3,
 					proc->name);
+			++c;
 		}
+		monitor_printf(mon, "\n*****A total of %d processes.*****\n",c);
 	}
 	else if(GuestOS_index_c == 5)
 	{
-		monitor_printf(mon, "*****VXWORKS*****\n");
+		monitor_printf(mon, "\n*****VXWORKS*****\n\n");
 		for (iter = process_pid_map.begin(); iter != process_pid_map.end(); iter++) {
 			proc = iter->second;
 			monitor_printf(mon, "0x%x\tcr3=0x%08x\t%s\n", proc->pid, proc->cr3,
 					proc->name);
+			++c;
 		}
-
+		monitor_printf(mon, "\n*****A total of %d tasks.*****\n",c);
 	}
 	else
 	{

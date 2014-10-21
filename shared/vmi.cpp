@@ -185,6 +185,23 @@ module* VMI_find_module_by_key(const char *key)
 	return NULL;
 }
 
+module * VMI_find_module_by_pid_base(target_ulong pid, uint32_t base)
+{
+	unordered_map<uint32_t, process *>::iterator iter = process_pid_map.find(pid);
+	process *proc;
+
+	if (iter == process_pid_map.end()) //pid not found
+		return NULL;
+
+	proc = iter->second;
+
+	unordered_map<uint32_t, module *>::iterator iter_m = proc->module_list.find(base);
+	if(iter_m == proc->module_list.end())
+		return NULL;
+
+	return iter_m->second;
+}
+
 module * VMI_find_module_by_base(target_ulong pgd, uint32_t base)
 {
 	unordered_map<uint32_t, process *>::iterator iter = process_map.find(pgd);

@@ -76,6 +76,8 @@ typedef struct _plugin_interface {
 
 extern plugin_interface_t *decaf_plugin;
 
+void do_user_mon(Monitor *mon, const QDict *qdict);
+
 void do_load_plugin_internal(Monitor *mon, const char *plugin_path);
 int do_load_plugin(Monitor *mon, const QDict *qdict, QObject **ret_data);
 int do_unload_plugin(Monitor *mon, const QDict *qdict, QObject **ret_data);

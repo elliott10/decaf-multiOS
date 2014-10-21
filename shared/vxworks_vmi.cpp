@@ -123,18 +123,18 @@ void vxworks_extract_symbols_info(CPUState *env, uint32_t cr3, target_ulong star
 // get new module, basically reading from mm_struct
 static void vxworks_get_new_modules_x86(CPUState* env, process * proc)
 {
-	target_ulong ts_mm, mm_mmap, vma_file, vma_next, f_dentry;
+/*	target_ulong ts_mm, mm_mmap, vma_file, vma_next, f_dentry;
 	const int MAX_LOOP_COUNT = 1024;	// prevent infinite loop
 	target_ulong vma_vm_start = 0, vma_vm_end = 0, vma_vm_flags, vma_vm_pgoff;
-	target_ulong last_vm_start = 0, last_vm_end = 0;
-	char name[32], key[128];	// module file path
-	string last_mod_name, mod_name;
-	target_ulong mod_vm_start, mod_vm_end;
+	target_ulong last_vm_start = 0, last_vm_end = 0;*/
+	char name[32] = "vxworks_kernel";	// module file path
+	string mod_name;
+	target_ulong mod_vm_start;
 	module* mod = NULL;
 	string _name;
 	set<uint32_t> module_bases;
 	bool finished_traversal = false;
-	int mod_stage = 0;
+/*	int mod_stage = 0;
 	bool three_sections_found = false;
 	static int offset_populated = 0, dentry_offset_populated = 0;
 	const int VM_FLAGS_NONE = 0;
@@ -156,7 +156,31 @@ static void vxworks_get_new_modules_x86(CPUState* env, process * proc)
 	// // see if vm_area is populated already
 	// if (populate_vm_area_struct_offsets(env, vma_next, &OFFSET_PROFILE))
 	// 	return;
+	*/
+		mod_name = name;
 
+		mod = VMI_find_module_by_key(mod_name.c_str());
+		if (!mod) {
+			mod = new module();
+			strncpy(mod->name, mod_name.c_str(), 31);
+			mod->name[31] = '\0';
+			mod->size = 0;
+			VMI_add_module(mod, mod_name.c_str());
+		}
+		module_bases.insert(proc->entry);
+
+		//monitor_printf(default_mon, "vxworks find mod [%s] \n",mod_name.c_str());
+
+		if(VMI_find_module_by_pid_base(proc->pid, proc->entry) != mod) {
+			VMI_insert_module(proc->pid, proc->entry, mod);
+			//if (proc->pid == 1)
+			 monitor_printf(default_mon, "Module (%s, 0x%08x->0x*, size %u) is loaded to proc %s (pid = %d) \n",
+						mod_name.c_str(), proc->entry, mod->size / 1024, proc->name, proc->pid);
+
+			finished_traversal = true;
+		}
+
+#if 0
 	for (size_t count = MAX_LOOP_COUNT; count--; ) {
 
 		// read current vma's size
@@ -273,6 +297,7 @@ static void vxworks_get_new_modules_x86(CPUState* env, process * proc)
 			//			mod_name.c_str(), mod_vm_start, mod_vm_end, mod->size / 1024, proc->name, proc->pid);
 		}
 
+#endif
 
 #if 0
 		module_bases.insert(vma_vm_start);
@@ -353,6 +378,7 @@ static void vxworks_get_new_modules_x86(CPUState* env, process * proc)
 
 #endif
 
+/*
 next:
 		if (DECAF_read_mem(env, vma_next + OFFSET_PROFILE.vma_vm_next, sizeof(target_ptr), &vma_next) < 0)
 			break;
@@ -361,6 +387,7 @@ next:
 			break;
 		}
 	}
+	*/
 
 	if (finished_traversal) {
 		unordered_map<uint32_t, module *>::iterator iter = proc->module_list.begin();
@@ -751,6 +778,7 @@ process * vxworks_find_new_process(CPUState *env, uint32_t cr3) {
 	const int MAX_LOOP_COUNT = 1024; // maximum loop count when trying to find a new process (will there be any?)
 	int bk = 0;
 	process *right_proc = NULL;
+	proc_cr3 = DECAF_getPGD(env);
 
 	//static target_ulong _last_next_task = 0;// another way to speed up: when the last task remain the same, return immediately
 
@@ -832,7 +860,7 @@ process * vxworks_find_new_process(CPUState *env, uint32_t cr3) {
 			process* pe = new process();
 			pe->pid = tcb_task;
 			//pe->parent_pid = ts_parent_pid;
-		//	pe->cr3 = proc_cr3;
+			pe->cr3 = proc_cr3;
 			pe->EPROC_base_addr = tcb_task; // store current task_struct's base address
 
 			BREAK_IF(DECAF_read_ptr(env, tcb_task + OFFSET_PROFILE.ts_name, &task_name) < 0);
@@ -853,7 +881,7 @@ process * vxworks_find_new_process(CPUState *env, uint32_t cr3) {
 
 			if(cr3 <= pe->ebp && cr3 >= pe->ts_ebp_limit)
 			{
-				monitor_printf(default_mon,"found new process!!!\n");
+		//		monitor_printf(default_mon,"found new process!!!\n");
 				right_proc = pe;
 			}
 
@@ -891,12 +919,15 @@ void vxworks_tlb_call_back(DECAF_Callback_Params *temp)
 {
 	CPUState *ourenv = temp->tx.env;
 	uint32_t vaddr = temp->tx.vaddr;
+	target_ulong name_ptr;
+	//xly
+	//uint32_t pgd = -1;
 	uint32_t ebp = -1;
 	process *proc = NULL;
 	bool found_new = false;
 	ebp = DECAF_getEBP(ourenv);
 	//pgd = DECAF_getPGD(ourenv);
-	//monitor_printf(default_mon, "DECAF_getEBP: [%x] \n", ebp);
+	//monitor_printf(default_mon, "DECAF_getPGD: [0x%x] \n", pgd);
 	
 	//TODO: kernel modules are not retrieved in the current implementation.
 	/*
@@ -907,14 +938,17 @@ void vxworks_tlb_call_back(DECAF_Callback_Params *temp)
 		found_new = ((proc = vxworks_find_new_process(ourenv, ebp)) != NULL);
 	}
 
-//	if (proc) {	// we are not scanning modules for kernel threads, since kernel thread's cr3 is -1UL, the proc should be null
-if(0){
-
+	if (proc) {	// we are not scanning modules for kernel threads, since kernel thread's cr3 is -1UL, the proc should be null
 		if ( !vxworks_is_vm_page_resolved(proc, vaddr) ) {
 			char task_comm[SIZEOF_COMM];
 			if ( !found_new
-				&& !DECAF_read_mem(ourenv, proc->EPROC_base_addr + OFFSET_PROFILE.ts_comm, SIZEOF_COMM, task_comm) 
+			//&& !DECAF_read_mem(ourenv, proc->EPROC_base_addr + OFFSET_PROFILE.ts_comm, SIZEOF_COMM, task_comm) 
+
+				&& !DECAF_read_ptr(ourenv, proc->EPROC_base_addr + OFFSET_PROFILE.ts_name, &name_ptr)
+			 	&& !DECAF_read_mem(ourenv, name_ptr, SIZEOF_COMM, task_comm)
+
 				&& strncmp(proc->name, task_comm, SIZEOF_COMM) ) {
+					monitor_printf(default_mon, "proc_name [%s] \n", task_comm);
 					strcpy(proc->name, task_comm);
 					//message_p(proc, '^');
 			}
@@ -939,32 +973,42 @@ static void vxworks_check_procexit(void *) {
         /* AWH - cpu_single_env is invalid outside of the main exec thread */
 	CPUState *env = /* AWH cpu_single_env ? cpu_single_env :*/ first_cpu;
 	qemu_mod_timer(recon_timer,
-				   qemu_get_clock_ns(vm_clock) + get_ticks_per_sec() * 10);
+				   qemu_get_clock_ns(vm_clock) + get_ticks_per_sec() * 5);
 
-	target_ulong next_task = OFFSET_PROFILE.init_task_addr;
+//	target_ulong next_task = OFFSET_PROFILE.init_task_addr;
 	set<target_ulong> live_pids;
 	set<target_ulong> vmi_pids;
 	set<target_ulong> dead_pids;
 
 	const int MAX_LOOP_COUNT = 1024;
 
+	int bk = 0;
+	target_ulong log_task, tcb_task, task_list, list_offset;
+	tcb_task = OFFSET_PROFILE.logtaskid_addr;
+	DECAF_read_ptr(env, tcb_task, &tcb_task);
+	log_task = tcb_task;
+
+	list_offset = OFFSET_PROFILE.ts_next; 
+
 	for(int i=0; i<MAX_LOOP_COUNT; i++)
 	{
-		target_ulong task_pid;
 		BREAK_IF(DECAF_read_ptr(env,
-			next_task + OFFSET_PROFILE.ts_tgid, 
-			&task_pid) < 0);
-		live_pids.insert(task_pid);
+			tcb_task + list_offset,
+			&task_list) < 0);
 
-		BREAK_IF(DECAF_read_ptr(env,
-			next_task + OFFSET_PROFILE.ts_tasks + sizeof(target_ptr),
-			&next_task) < 0);
+		tcb_task = task_list - OFFSET_PROFILE.ts_prev;
 
-		next_task -= OFFSET_PROFILE.ts_tasks;
-		if (next_task == OFFSET_PROFILE.init_task_addr)
-		{
-			break;
-		}
+		//first prev_link_info get,now next_link_info get
+		if(task_list == 0)
+			{
+//			monitor_printf(default_mon, "BREAK! \n");
+				BREAK_IF(bk);
+				bk = 1;
+				tcb_task = log_task;
+				list_offset = OFFSET_PROFILE.ts_prev;
+			}
+
+		live_pids.insert(tcb_task);
 	}
 
 	unordered_map<uint32_t, process *>::iterator iter = process_pid_map.begin();
@@ -1036,7 +1080,7 @@ int find_vxworks(CPUState *env, uintptr_t insn_handle) {
 
 	// load library function offset
 
-	//xly vxworks_load_library_info(OFFSET_PROFILE.strName);
+	vxworks_load_library_info(OFFSET_PROFILE.strName);
 
 	// vxworks_load_proc_info(OFFSET_PROFILE, temp_offset_profile.init_task_addr);
 	//vxworks_printProcInfo(&OFFSET_PROFILE);
@@ -1053,11 +1097,9 @@ void vxworks_vmi_init()
 
 	DECAF_register_callback(DECAF_TLB_EXEC_CB, vxworks_tlb_call_back, NULL);
 
-	/*
 	recon_timer = qemu_new_timer_ns(vm_clock, vxworks_check_procexit, 0);
 	qemu_mod_timer(recon_timer,
-				   qemu_get_clock_ns(vm_clock) + get_ticks_per_sec() * 20);
-	*/
+				   qemu_get_clock_ns(vm_clock) + get_ticks_per_sec() * 5);
 
 }
 

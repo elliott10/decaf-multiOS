@@ -13,6 +13,16 @@ http://sycurelab.ecs.syr.edu/
 If you have any questions about DECAF,please post it on
 http://code.google.com/p/decaf-platform/
 */
+//xly user_mon
+{
+.name       = "user_mon",
+.args_type  = "integer:i",
+.params     = "integer",
+.help       = "user cmds",
+.mhandler.cmd_new = do_user_mon,
+},
+
+
 {
 .name       = "load_plugin",
 .args_type  = "filename:F",

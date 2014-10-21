@@ -87,6 +87,8 @@ module * VMI_find_module_by_pc(target_ulong pc, target_ulong pgd, target_ulong *
 
 module * VMI_find_module_by_name(const char *name, target_ulong pgd, target_ulong *base);
 
+module * VMI_find_module_by_pid_base(target_ulong pid, uint32_t base);
+
 module * VMI_find_module_by_base(target_ulong pgd, uint32_t base);
 
 process * VMI_find_process_by_pid(uint32_t pid);
