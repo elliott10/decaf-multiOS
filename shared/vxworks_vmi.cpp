@@ -166,7 +166,9 @@ static void vxworks_get_new_modules_x86(CPUState* env, process * proc)
 			mod->name[31] = '\0';
 			mod->size = 0;
 			VMI_add_module(mod, mod_name.c_str());
+			// monitor_printf(default_mon, "New Module Add\n");
 		}
+
 		module_bases.insert(proc->entry);
 
 		//monitor_printf(default_mon, "vxworks find mod [%s] \n",mod_name.c_str());
