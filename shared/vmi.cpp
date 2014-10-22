@@ -254,7 +254,31 @@ module * VMI_find_module_by_name(const char *name, target_ulong pgd, target_ulon
 {
 	unordered_map < uint32_t, process * >::iterator iter_p = process_map.find(pgd);
 	if (iter_p == process_map.end())
-		return NULL;
+	{
+		//xly just for vxworks
+		unordered_map < uint32_t, process * >::iterator iter_i = process_pid_map.find(pgd);
+		if (iter_i == process_pid_map.end())
+			return NULL;
+		else
+		{
+			process *proc3 = iter_i->second;
+
+			unordered_map< uint32_t, module * >::iterator iter3;
+			for (iter3 = proc3->module_list.begin(); iter3 != proc3->module_list.end(); iter3++) {
+				module *mod3 = iter3->second;
+			monitor_printf(default_mon, "its VMI_pid, mod name:%s \n",mod3->name);
+				if (strcasecmp(mod3->name, name) == 0) {
+					*base = 0;
+			//*base = iter3->first;
+					return mod3;
+				}
+
+			}
+			return NULL;
+		}
+	}
+
+//	monitor_printf(default_mon, "its VMI_pgd \n");
 
 	process *proc = iter_p->second;
 
@@ -267,7 +291,7 @@ module * VMI_find_module_by_name(const char *name, target_ulong pgd, target_ulon
 		}
 	}
 
-    return NULL;
+	return NULL;
 }
 
 /*

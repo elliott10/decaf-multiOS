@@ -48,6 +48,8 @@ http://code.google.com/p/decaf-platform/
 
 using namespace std;
 
+extern uint32_t GuestOS_index_c;
+
 // Map ``module name" -> "function name" -> offset
 map<string, map<string, uint32_t> > map_function_offset;
 
@@ -56,11 +58,15 @@ map<string, map<uint32_t, string> > map_offset_function;
 target_ulong funcmap_get_pc(const char *module_name, const char *function_name, target_ulong cr3) __attribute__((optimize("O0")));
 target_ulong funcmap_get_pc(const char *module_name, const char *function_name, target_ulong cr3)
 {
-	target_ulong base;
+	target_ulong base = 0;
+
+	//xly just for vxworks
+	if(GuestOS_index_c != 5)
+	{
 	module *mod = VMI_find_module_by_name(module_name, cr3, &base);
 	if(!mod) 
 		return 0;
-	
+	}
 
 	map<string, map<string, uint32_t> >::iterator iter = map_function_offset.find(module_name);
 	if(iter == map_function_offset.end()) {
@@ -74,6 +80,8 @@ target_ulong funcmap_get_pc(const char *module_name, const char *function_name, 
 	map<string, uint32_t>::iterator iter2 = iter->second.find(function_name);
 	if(iter2 == iter->second.end()) 
 		return 0;
+
+//	monitor_printf(default_mon, "its get_pc:%x ,and base:%x \n",iter2->second,base);
 	
 	return iter2->second + base;
 }

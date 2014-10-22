@@ -43,6 +43,8 @@ http://code.google.com/p/decaf-platform/
 #include "DECAF_types.h"
 #include "DECAF_target.h"
 
+#include "shared/vmi.h"
+
 //LOK: Since the old interface registered for ALL possible basic blocks,
 // the addition of the optimized basic block callback means that
 // the whole logic must be updated to use the optimized basic block
@@ -59,6 +61,7 @@ http://code.google.com/p/decaf-platform/
 // which does not seem like a good idea. A delayed flush or usage count would
 // help make this better - however it also has overhead.
 
+extern uint32_t GuestOS_index_c;
 using namespace std;
 
 typedef struct hookapi_record{
@@ -199,45 +202,49 @@ static void hookapi_save(QEMUFile *f, void *opaque)
 //multi-threading context, the same return address may be hooked in several threads.
 static void hookapi_check_hook(DECAF_Callback_Params* params)
 {
-        if(cpu_single_env == NULL) return;
+	if(cpu_single_env == NULL) return;
 
-        target_ulong pc = DECAF_getPC(cpu_single_env);
-        target_ulong pgd = DECAF_getPGD(cpu_single_env);
+	target_ulong pc = DECAF_getPC(cpu_single_env);
+	target_ulong pgd = DECAF_getPGD(cpu_single_env);
 
-    struct hookapi_record_list_head *head =
-              &hookapi_record_heads[pc & (HOOKAPI_HTAB_SIZE - 1)];
-        hookapi_record_t *record, *tmp;
+	struct hookapi_record_list_head *head =
+		&hookapi_record_heads[pc & (HOOKAPI_HTAB_SIZE - 1)];
+	hookapi_record_t *record, *tmp;
 
-        //NOTE: this is a safe version of QLIST_FOREACH
-        for(record = head->lh_first; record;  record = tmp) {
-                tmp = record->link.le_next;
+	//NOTE: this is a safe version of QLIST_FOREACH
+	for(record = head->lh_first; record;  record = tmp) {
+		tmp = record->link.le_next;
 
-            if(record->eip != pc)
-                continue;
-            
-            //On the same execution point, there might be multiple callbacks registered.
-            //So we have to check the handle to make sure we act on the same callback
-            if(record->cbhandle != params->cbhandle)
-                continue;    
+		if(record->eip != pc)
+			continue;
 
-            //check if this hook is only for a specific memory space
-            if(record->cr3 != 0 && record->cr3!=pgd)
-                continue;
+		//On the same execution point, there might be multiple callbacks registered.
+		//So we have to check the handle to make sure we act on the same callback
+		if(record->cbhandle != params->cbhandle)
+			continue;    
 
-            //check if this is a global hook
-            //if it is a local hook, then should_monitor must be true
-            if(!record->is_global && ! should_monitor)
-                continue;
+		//xly for vxworks
+		if(GuestOS_index_c != 5)
+		{
+			//check if this hook is only for a specific memory space
+			if(record->cr3 != 0 && record->cr3!=pgd)
+				continue;
+		}
 
-            //check if this is a return hook.
-            //the recorded ESP must be close enough to the current ESP.
-            //otherwise, it must be a return hook for the same function call in a different thread.
-            //The threshold 80 is based on that normally no function has more than 20 arguments.
-            if(record->esp && DECAF_getESP(cpu_single_env) - record->esp > 80)
-                continue;
+		//check if this is a global hook
+		//if it is a local hook, then should_monitor must be true
+		if(!record->is_global && ! should_monitor)
+			continue;
 
-            record->fnhook(record->opaque);
-        }
+		//check if this is a return hook.
+		//the recorded ESP must be close enough to the current ESP.
+		//otherwise, it must be a return hook for the same function call in a different thread.
+		//The threshold 80 is based on that normally no function has more than 20 arguments.
+		if(record->esp && DECAF_getESP(cpu_single_env) - record->esp > 80)
+			continue;
+
+		record->fnhook(record->opaque);
+	}
 }
 
 static int hookapi_load(QEMUFile *f, void *opaque, int version_id)
@@ -522,6 +529,14 @@ static uintptr_t add_unresolved_hook(const char *module_name,
                      void* opaque,
                      uint32_t sizeof_opaque)
 {
+	//xly for vxworks
+	if(GuestOS_index_c == 5)
+	{
+    printf("Function:%s at %s no found! Please check it.\n", function_name, module_name);
+    return 0;
+	}
+
+
   //LOK: Preallocating the hook handle so we can return the handler as part of this function
   hookapi_record_t *record = (hookapi_record_t *)g_malloc(sizeof(hookapi_record_t));
   if (record == NULL)
@@ -590,6 +605,4 @@ uintptr_t hookapi_hook_function_byname(const char *mod_name, const char *fun_nam
     return (hookapi_hook_function(is_global, pc, cr3, fnhook, opaque, sizeof_opaque));
   }
 }
-
-
 

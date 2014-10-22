@@ -176,8 +176,8 @@ static void vxworks_get_new_modules_x86(CPUState* env, process * proc)
 		if(VMI_find_module_by_pid_base(proc->pid, proc->entry) != mod) {
 			VMI_insert_module(proc->pid, proc->entry, mod);
 			//if (proc->pid == 1)
-			 monitor_printf(default_mon, "Module (%s, 0x%08x->0x*, size %u) is loaded to proc %s (pid = %d) \n",
-						mod_name.c_str(), proc->entry, mod->size / 1024, proc->name, proc->pid);
+		//	 monitor_printf(default_mon, "Module (%s, 0x%08x->0x*, size %u) is loaded to proc %s (pid = %d) \n",
+		//				mod_name.c_str(), proc->entry, mod->size / 1024, proc->name, proc->pid);
 
 			finished_traversal = true;
 		}
@@ -923,13 +923,13 @@ void vxworks_tlb_call_back(DECAF_Callback_Params *temp)
 	uint32_t vaddr = temp->tx.vaddr;
 	target_ulong name_ptr;
 	//xly
-	//uint32_t pgd = -1;
+//	uint32_t pgd = -1;
 	uint32_t ebp = -1;
 	process *proc = NULL;
 	bool found_new = false;
 	ebp = DECAF_getEBP(ourenv);
-	//pgd = DECAF_getPGD(ourenv);
-	//monitor_printf(default_mon, "DECAF_getPGD: [0x%x] \n", pgd);
+//	pgd = DECAF_getPGD(ourenv);
+//	monitor_printf(default_mon, "DECAF_getPGD: [0x%x] \n", pgd);
 	
 	//TODO: kernel modules are not retrieved in the current implementation.
 	/*
