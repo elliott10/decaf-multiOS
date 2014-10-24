@@ -102,6 +102,7 @@ int funcmap_get_name(target_ulong pc, target_ulong cr3, string &mod_name, string
 
 	mod_name = mod->name;
 	func_name = iter2->second;
+//	monitor_printf(default_mon, "FuncName: [%s] \n",iter2->second.c_str());
 	return 0;
 }
 

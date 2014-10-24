@@ -66,15 +66,29 @@ int  VMI_locate_module_c(gva_t eip, gva_t cr3, char proc[],tmodinfo_t *tm)
 {
 	module *m;
 	process *p;
-    gva_t base = 0;
+	gva_t base = 0;
 
-    p = VMI_find_process_by_pgd(cr3);
-    if (!p)
-    	return -1;
 
-	m = VMI_find_module_by_pc(eip, cr3, &base);
-	if(!m)
-		return -1;
+	if(GuestOS_index_c != 5)
+	{
+		p = VMI_find_process_by_pgd(cr3);
+		if (!p)
+			return -1;
+
+		m = VMI_find_module_by_pc(eip, cr3, &base);
+		if(!m)
+			return -1;
+	}
+	else{
+		p = VMI_find_process_by_ebp(cr3);
+		if (!p)
+			return -1;
+
+		m = VMI_find_module_by_pc(eip, p->pid, &base);
+		if(!m)
+			return -1;
+	}
+
 	strncpy(tm->name, m->name, MODULE_NAME_SIZE ) ;
 	strncpy(proc, p->name, sizeof(p->name));
 	tm->base = base;
@@ -116,6 +130,16 @@ int VMI_find_cr3_by_pid_c(uint32_t pid)
 	return p->cr3;
 
 }
+
+int VMI_find_pid_by_vxworks_ebp(uint32_t ebp)
+{
+	process * p = NULL;
+	p  = VMI_find_process_by_ebp(ebp);
+	if(!p)
+		return -1;
+	return p->pid;
+}
+
 
 int VMI_find_pid_by_cr3_c(uint32_t cr3)
 {

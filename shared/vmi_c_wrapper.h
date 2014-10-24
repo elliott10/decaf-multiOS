@@ -52,6 +52,7 @@ extern int VMI_locate_module_byname_c(const char *name, uint32_t pid,tmodinfo_t 
 
 
 extern int VMI_find_cr3_by_pid_c(uint32_t pid);
+extern int VMI_find_pid_by_vxworks_ebp(uint32_t ebp);
 
 extern int VMI_find_pid_by_cr3_c(uint32_t cr3);
 

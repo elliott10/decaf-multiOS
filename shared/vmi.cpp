@@ -222,32 +222,58 @@ module * VMI_find_module_by_base(target_ulong pgd, uint32_t base)
 module * VMI_find_module_by_pc(target_ulong pc, target_ulong pgd, target_ulong *base)
 {
 	process *proc ;
-	if (pc >= VMI_guest_kernel_base) {
-		proc = process_pid_map[0];
-	} else {
-		unordered_map < uint32_t, process * >::iterator iter_p = process_map.find(pgd);
-		if (iter_p == process_map.end()) 
+
+	if(GuestOS_index_c != 5)
+	{
+
+		if (pc >= VMI_guest_kernel_base) {
+			proc = process_pid_map[0];
+		} else {
+			unordered_map < uint32_t, process * >::iterator iter_p = process_map.find(pgd);
+			if (iter_p == process_map.end()) 
+				return NULL;
+
+			proc = iter_p->second;
+		}
+		unordered_map< uint32_t, module * >::iterator iter;
+		for (iter = proc->module_list.begin(); iter != proc->module_list.end(); iter++) {
+			module *mod = iter->second;
+			if (iter->first <= pc && mod->size + iter->first > pc) {
+				*base = iter->first;
+
+				return mod;
+			}
+			/*
+			   if(strncmp(mod->name,"idle",5)!=0){
+			   monitor_printf(default_mon, "VMI_find_module_by_pc 4: pc 0x%x,  no find mod  %s, mod.base 0x%x, mod->size 0x%x\n",
+			   pc, mod->name, iter->first, mod->size );
+			   }
+			 */
+		}
+
+	}else{
+		char module_name[] = "vxworks_kernel";
+
+		//vxworks pgd --> pid value
+		unordered_map < uint32_t, process * >::iterator iter_i = process_pid_map.find(pgd);
+		if (iter_i == process_pid_map.end()) 
 			return NULL;
-        
-		proc = iter_p->second;
-	}
-	unordered_map< uint32_t, module * >::iterator iter;
-	for (iter = proc->module_list.begin(); iter != proc->module_list.end(); iter++) {
-		module *mod = iter->second;
-		if (iter->first <= pc && mod->size + iter->first > pc) {
-			*base = iter->first;
-			
-			return mod;
+
+		proc = iter_i->second;//no used
+
+		unordered_map< uint32_t, module * >::iterator iter3;
+		for (iter3 = proc->module_list.begin(); iter3 != proc->module_list.end(); iter3++) {
+			module *mod = iter3->second;
+			if (strcasecmp(module_name, mod->name) == 0){
+				*base = 0;
+
+		//	monitor_printf(default_mon, "ModName: %s, ProName: %s \n",mod->name,proc->name);
+				return mod;
+			}
 		}
-		/*
-		if(strncmp(mod->name,"idle",5)!=0){
-		monitor_printf(default_mon, "VMI_find_module_by_pc 4: pc 0x%x,  no find mod  %s, mod.base 0x%x, mod->size 0x%x\n",
-					   pc, mod->name, iter->first, mod->size );
-		}
-		*/
 	}
-				   
-    return NULL;
+
+	return NULL;
 }
 
 module * VMI_find_module_by_name(const char *name, target_ulong pgd, target_ulong *base)
