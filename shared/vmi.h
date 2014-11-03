@@ -26,6 +26,8 @@ using namespace std::tr1;
 #define MAX_NAME_LENGTHC 64
 
 //uint32_t GuestOS_index_c=11;
+#define VXWORKS_INDEX 5
+#define UCORE_INDEX 4
 
 
 class module{

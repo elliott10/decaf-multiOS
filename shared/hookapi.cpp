@@ -224,7 +224,7 @@ static void hookapi_check_hook(DECAF_Callback_Params* params)
 			continue;    
 
 		//xly for vxworks
-		if(GuestOS_index_c != 5)
+		if(GuestOS_index_c != VXWORKS_INDEX)
 		{
 			//check if this hook is only for a specific memory space
 			if(record->cr3 != 0 && record->cr3!=pgd)
@@ -530,12 +530,11 @@ static uintptr_t add_unresolved_hook(const char *module_name,
                      uint32_t sizeof_opaque)
 {
 	//xly for vxworks
-	if(GuestOS_index_c == 5)
+	if(GuestOS_index_c == VXWORKS_INDEX)
 	{
-    printf("Function:%s at %s no found! Please check it.\n", function_name, module_name);
-    return 0;
+		printf("Function:%s at %s no found! Please check it.\n", function_name, module_name);
+		return 0;
 	}
-
 
   //LOK: Preallocating the hook handle so we can return the handler as part of this function
   hookapi_record_t *record = (hookapi_record_t *)g_malloc(sizeof(hookapi_record_t));

@@ -68,8 +68,7 @@ int  VMI_locate_module_c(gva_t eip, gva_t cr3, char proc[],tmodinfo_t *tm)
 	process *p;
 	gva_t base = 0;
 
-
-	if(GuestOS_index_c != 5)
+	if(GuestOS_index_c != VXWORKS_INDEX)
 	{
 		p = VMI_find_process_by_pgd(cr3);
 		if (!p)
@@ -131,7 +130,7 @@ int VMI_find_cr3_by_pid_c(uint32_t pid)
 
 }
 
-int VMI_find_pid_by_vxworks_ebp(uint32_t ebp)
+int VMI_find_pid_ebp_c(uint32_t ebp)
 {
 	process * p = NULL;
 	p  = VMI_find_process_by_ebp(ebp);
@@ -257,7 +256,7 @@ int VMI_list_processes(Monitor *mon)
 	unordered_map<uint32_t, process *>::iterator iter;
 	int c = 0;
 
-	if(GuestOS_index_c == 4)
+	if(GuestOS_index_c == UCORE_INDEX)
 	{
 		monitor_printf(mon, "\n*****UCORE*****\n\n");
 		for (iter = process_pid_map.begin(); iter != process_pid_map.end(); iter++) {
@@ -268,7 +267,7 @@ int VMI_list_processes(Monitor *mon)
 		}
 		monitor_printf(mon, "\n*****A total of %d processes.*****\n",c);
 	}
-	else if(GuestOS_index_c == 5)
+	else if(GuestOS_index_c == VXWORKS_INDEX)
 	{
 		monitor_printf(mon, "\n*****VXWORKS*****\n\n");
 		for (iter = process_pid_map.begin(); iter != process_pid_map.end(); iter++) {

@@ -54,7 +54,7 @@ void check_call(DECAF_Callback_Params *param)
 	target_ulong pc = param->be.next_pc;
 	//target_ulong cr3 = DECAF_getPGD(env) ;
 	target_ulong ebp = DECAF_getEBP(env);
-	if((ebp = VMI_find_pid_by_vxworks_ebp(ebp)) == -1)
+	if((ebp = VMI_find_pid_by_ebp_c(ebp)) == -1)
 		DECAF_printf("\nPID no found! Maybe in kernel\n");
 //	ebp = proc->pid;//vxworks pgd --> pid value
 
@@ -139,7 +139,7 @@ void do_read_taint_mem(DECAF_Callback_Params *param)
 	}
 	if(stack_top)
 	{
-		ebp = VMI_find_pid_by_vxworks_ebp(ebp);
+		ebp = VMI_find_pid_by_ebp_c(ebp);
 		if(ebp == cr3_stack[stack_top-1])
 		{
 			funcmap_get_name_c(sys_call_entry_stack[stack_top-1], ebp, modname_t, func_name_t);
@@ -181,7 +181,7 @@ void do_write_taint_mem(DECAF_Callback_Params *param)
 
 	if(stack_top)
 	{
-		ebp = VMI_find_pid_by_vxworks_ebp(ebp);
+		ebp = VMI_find_pid_by_ebp_c(ebp);
 		if(ebp == cr3_stack[stack_top-1])
 		{
 			funcmap_get_name_c(sys_call_entry_stack[stack_top-1], ebp, modname_t, func_name_t);

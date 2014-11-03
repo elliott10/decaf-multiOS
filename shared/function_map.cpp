@@ -61,7 +61,7 @@ target_ulong funcmap_get_pc(const char *module_name, const char *function_name, 
 	target_ulong base = 0;
 
 	//xly just for vxworks
-	if(GuestOS_index_c != 5)
+	if(GuestOS_index_c != VXWORKS_INDEX)
 	{
 	module *mod = VMI_find_module_by_name(module_name, cr3, &base);
 	if(!mod) 

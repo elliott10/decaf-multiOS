@@ -143,18 +143,17 @@ process * VMI_find_process_by_pgd(uint32_t pgd)
 	return NULL;
 }
 
+//xly for vxworks no pgd
 process * VMI_find_process_by_ebp(uint32_t ebp)
 {
-    unordered_map < uint32_t, process * >::iterator iter;
+	unordered_map < uint32_t, process * >::iterator iter;
 
-    for (iter = process_pid_map.begin(); iter != process_pid_map.end(); iter++) {
-	process * proc = iter->second;
-
-	if(ebp <= proc->ebp && ebp >= proc->ts_ebp_limit)
+	for (iter = process_pid_map.begin(); iter != process_pid_map.end(); iter++) {
+		process * proc = iter->second;
+		if(ebp <= proc->ebp && ebp >= proc->ts_ebp_limit && proc->ts_ebp_limit != -1)
 		{
-	//monitor_printf(default_mon, "find_EBP: [%x], procname: [%s] \n", proc->ebp, proc->name);
-
-		return proc;
+			//monitor_printf(default_mon, "find_EBP: [%x], procname: [%s] \n", proc->ebp, proc->name);
+			return proc;
 		}
 	}
 
@@ -223,7 +222,7 @@ module * VMI_find_module_by_pc(target_ulong pc, target_ulong pgd, target_ulong *
 {
 	process *proc ;
 
-	if(GuestOS_index_c != 5)
+	if(GuestOS_index_c != VXWORKS_INDEX)
 	{
 
 		if (pc >= VMI_guest_kernel_base) {
@@ -265,7 +264,7 @@ module * VMI_find_module_by_pc(target_ulong pc, target_ulong pgd, target_ulong *
 		for (iter3 = proc->module_list.begin(); iter3 != proc->module_list.end(); iter3++) {
 			module *mod = iter3->second;
 			if (strcasecmp(module_name, mod->name) == 0){
-				*base = 0;
+				*base = iter3->first;
 
 		//	monitor_printf(default_mon, "ModName: %s, ProName: %s \n",mod->name,proc->name);
 				return mod;
@@ -281,7 +280,7 @@ module * VMI_find_module_by_name(const char *name, target_ulong pgd, target_ulon
 	unordered_map < uint32_t, process * >::iterator iter_p = process_map.find(pgd);
 	if (iter_p == process_map.end())
 	{
-		//xly just for vxworks
+		//xly just for vxworks:pgd ==> pid, *base=0  all process uses an same address space
 		unordered_map < uint32_t, process * >::iterator iter_i = process_pid_map.find(pgd);
 		if (iter_i == process_pid_map.end())
 			return NULL;
@@ -294,7 +293,7 @@ module * VMI_find_module_by_name(const char *name, target_ulong pgd, target_ulon
 				module *mod3 = iter3->second;
 			monitor_printf(default_mon, "its VMI_pid, mod name:%s \n",mod3->name);
 				if (strcasecmp(mod3->name, name) == 0) {
-					*base = 0;
+					*base = iter3->first;
 			//*base = iter3->first;
 					return mod3;
 				}
@@ -305,7 +304,6 @@ module * VMI_find_module_by_name(const char *name, target_ulong pgd, target_ulon
 	}
 
 //	monitor_printf(default_mon, "its VMI_pgd \n");
-
 	process *proc = iter_p->second;
 
 	unordered_map< uint32_t, module * >::iterator iter;
