@@ -10,6 +10,6 @@
 	.name = "disable_test_case",
 	.args_type = "", 
 	.mhandler.cmd = test_cleanup,
-	.params = "no params",
+	.params = "",
 	.help = "disable test case." 
 },

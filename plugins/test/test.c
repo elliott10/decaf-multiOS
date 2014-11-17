@@ -28,6 +28,9 @@ http://code.google.com/p/decaf-platform/
 #include "vmi_c_wrapper.h"
 
 #include "DECAF_target.h"
+
+#include "qemu-timer.h"
+
 //basic stub for plugins
 static plugin_interface_t test_interface;
 static int bVerboseTest = 0;
@@ -67,8 +70,10 @@ static char decaf_callback[20][30] = {"NULL","DECAF_BLOCK_BEGIN_CB","DECAF_BLOCK
 
 static int curTest = 0;
 
-
+static QEMUTimer *rec_timer = NULL; 
+static QEMUTimer *rec_timer2 = NULL; 
 static int taint_key_enabled=0;
+static int callback_clean_all=0;
 
 static int vmiTest01 = 0;
 static int vmiTest02 = 0;
@@ -135,8 +140,12 @@ static void runTests(void);
 static void test_printSummary(void);
 static void test_resetTests(void);
 
+static int callback_test_summary(void);
 static int decaf_test_init(void);
 static int vmi_test_init(void);
+
+static void vmi_test_cleanup(void);
+static void decaf_test_cleanup(void);
 static void test_cleanup(void);
 
 static void test_printSummary(void)
@@ -358,6 +367,7 @@ void do_test(Monitor* mon, const QDict* qdict)
 
 static void vmi_cb_func01(VMI_Callback_Params* params)
 {
+	vmiTest01++;
 	//char procname[64];
 	char *procname = NULL;
 	uint32_t pid, cr3, ebp;
@@ -367,16 +377,20 @@ static void vmi_cb_func01(VMI_Callback_Params* params)
 		return;
 	}
 
-	vmiTest01++;
-	DECAF_printf("[%s] callback test.",vmi_callback[1]);
-
 	pid = params->cp.pid;
 	cr3 = params->cp.cr3;
 	ebp = DECAF_getEBP(cpu_single_env);
 	procname = params->cp.name;
 	//VMI_find_process_by_ebp
 
+	DECAF_printf("[%s] callback test.",vmi_callback[1]);
 	DECAF_printf("Process found: name [%s], pid [%d], cr3 [%08x], ebp [%08x]\n",procname, pid, cr3, ebp);
+
+	if(!rec_timer)
+	{
+	rec_timer = qemu_new_timer_ns(vm_clock, vmi_test_cleanup, 0);
+	qemu_mod_timer(rec_timer, qemu_get_clock_ns(vm_clock) + get_ticks_per_sec() * 5); 
+	}
 
 	/*
 	   vmiTest01++;
@@ -388,22 +402,23 @@ static void vmi_cb_func01(VMI_Callback_Params* params)
 }
 static void vmi_cb_func02(VMI_Callback_Params* params)
 {
+	vmiTest02++;
 	uint32_t pid;
 	if (params == NULL)
 	{
 		return;
 	}
-	vmiTest02++;
 	/*
 	   if(vmiTest02 > 3)
 	   {
 	   return 0;
 	   }
 	 */
-	DECAF_printf("[%s] callback test.",vmi_callback[2]);
 	pid = params->rp.pid;
+	DECAF_printf("[%s] callback test.",vmi_callback[2]);
 	DECAF_printf("Process remove: pid [%d]\n",pid);
 
+	/*
 	if(vmiTest02 == 1)
 	{
 		VMI_unregister_callback(VMI_CREATEPROC_CB, vmi_handle01); 
@@ -415,10 +430,13 @@ static void vmi_cb_func02(VMI_Callback_Params* params)
 
 		decaf_test_init();
 	}
+	*/
 }
 
 static void vmi_cb_func03(VMI_Callback_Params* params)
 {
+	vmiTest03++;
+
 	uint32_t pid, base, size;
 	//char name[64], full_name[128];
 	char *name = NULL;
@@ -428,9 +446,6 @@ static void vmi_cb_func03(VMI_Callback_Params* params)
 	{   
 		return;
 	}  
-
-	vmiTest03++;
-	DECAF_printf("[%s] callback test.",vmi_callback[3]);
 
 	pid=params->lm.pid;
 	base=params->lm.base;
@@ -443,10 +458,12 @@ static void vmi_cb_func03(VMI_Callback_Params* params)
 	   }
 	 */
 
+	DECAF_printf("[%s] callback test.",vmi_callback[3]);
 	DECAF_printf("Module found: fullname [%s], pid [%d], base [%08x], size [%08x], name [%s]\n", full_name, pid, base, size, name);
 }
 static void vmi_cb_func04(VMI_Callback_Params* params)
 {
+	vmiTest04++;
 	uint32_t pid, base;
 
 	if (params == NULL)
@@ -454,12 +471,10 @@ static void vmi_cb_func04(VMI_Callback_Params* params)
 		return;
 	}
 
-	vmiTest04++;
-	DECAF_printf("[%s] callback test.",vmi_callback[4]);
-
 	pid=params->rm.pid;
 	base=params->rm.base;
 
+	DECAF_printf("[%s] callback test.",vmi_callback[4]);
 	DECAF_printf("Module remove: pid [%d], base [%08x]\n",pid, base);
 
 	/*
@@ -491,9 +506,9 @@ static void vmi_cb_func06(VMI_Callback_Params* params)
 
 static void decaf_cb_func01(DECAF_Callback_Params* params)
 {
+	decafTest01++;
 	uint32_t eip = -1, cr3 = -1, ebp = -1;
 
-	decafTest01++;
 	if(decafTest01 > 3)
 	{
 		return 0;
@@ -553,10 +568,10 @@ static void decaf_cb_func05(DECAF_Callback_Params* params)
 	{
 		return 0;
 	}
-	DECAF_printf("[%s] callback test.", decaf_callback[5]);
 	virt_addr=params->mw.vaddr;
 	phys_addr=params->mw.paddr;
 	size=params->mw.dt;
+	DECAF_printf("[%s] callback test.", decaf_callback[5]);
 	DECAF_printf("Mem_Read: virt_addr [%08x], phys_addr [%08x], size [%d]\n", virt_addr, phys_addr, size);
 }
 static void decaf_cb_func06(DECAF_Callback_Params* params)
@@ -568,10 +583,10 @@ static void decaf_cb_func06(DECAF_Callback_Params* params)
 	{
 		return 0;
 	}
-	DECAF_printf("[%s] callback test.", decaf_callback[6]);
 	virt_addr=params->mw.vaddr;
 	phys_addr=params->mw.paddr;
 	size=params->mw.dt;
+	DECAF_printf("[%s] callback test.", decaf_callback[6]);
 	DECAF_printf("Mem_Write: virt_addr [%08x], phys_addr [%08x], size [%d]\n", virt_addr, phys_addr, size);
 }
 static void decaf_cb_func07(DECAF_Callback_Params* params)
@@ -595,8 +610,6 @@ static void decaf_cb_func08(DECAF_Callback_Params* params)
 	{
 		return 0;
 	}
-	DECAF_printf("[%s] callback test.\n", decaf_callback[8]);
-
 	if(!taint_key_enabled)
 		return;
 
@@ -604,6 +617,7 @@ static void decaf_cb_func08(DECAF_Callback_Params* params)
 	uint32_t *taint_mark=params->ks.taint_mark;
 	*taint_mark=taint_key_enabled;
 	taint_key_enabled=0;
+	DECAF_printf("[%s] callback test.\n", decaf_callback[8]);
 	printf("Taint keystroke %d \n ",keycode);
 }
 static void decaf_cb_func09(DECAF_Callback_Params* params)
@@ -645,7 +659,6 @@ static void decaf_cb_func12(DECAF_Callback_Params* params)
 	{
 		return 0;
 	}
-	DECAF_printf("[%s] callback test.\n", decaf_callback[12]);
 
 	pgd = DECAF_getPGD(env);
 	if(pgd == -1)
@@ -655,18 +668,17 @@ static void decaf_cb_func12(DECAF_Callback_Params* params)
 	if(ebp == -1)
 		DECAF_printf("DECAF_getEBP() error*****\n");
 
+	DECAF_printf("[%s] callback test.\n", decaf_callback[12]);
 	DECAF_printf("TLB_call_back: vaddr [%08x], pgd [%08x], ebp [%08x]\n", vaddr, pgd, ebp);
 }
 static void decaf_cb_func13(DECAF_Callback_Params* params)
 {
-	uint32_t eip= DECAF_getPC(cpu_single_env);
-	uint32_t cr3= DECAF_getPGD(cpu_single_env);
-	uint32_t ebp= DECAF_getEBP(cpu_single_env);
+	uint32_t eip=-1, cr3=-1, ebp=-1;
 
 	decafTest13++;
 	if(decafTest13 > 3)
 	{
-
+		/*
 		if(decaf_handle13)
 		{
 			DECAF_unregister_callback(DECAF_READ_TAINTMEM_CB, decaf_handle13);
@@ -678,10 +690,23 @@ static void decaf_cb_func13(DECAF_Callback_Params* params)
 			DECAF_unregister_callback(DECAF_KEYSTROKE_CB, decaf_handle08);//invoked when system read a keystroke from ps2 driver
 			decaf_handle08 = DECAF_NULL_HANDLE;
 		}
+		*/
 
 		//	DECAF_unregister_callback(DECAF_WRITE_TAINTMEM_CB, decaf_handle14);
 		return 0;
 	}
+
+	eip = DECAF_getPC(cpu_single_env);
+	if(eip == -1)
+	DECAF_printf("DECAF_getPC() error*****\n");
+
+	cr3 = DECAF_getPGD(cpu_single_env);
+	if(cr3 == -1)
+	DECAF_printf("DECAF_getPGD() error*****\n");
+
+	ebp = DECAF_getEBP(cpu_single_env);
+	if(ebp == -1)
+	DECAF_printf("DECAF_getEBP() error*****\n");
 
 	DECAF_printf("[%s] callback test.", decaf_callback[13]);
 	DECAF_printf("Read_Taint_Mem: vaddr [%08x], paddr [%08x], size [%d], taint_info [%08x], eip [%08x], cr3 [%08x], ebp [%08x]\n", params->rt.vaddr, params->rt.paddr, params->rt.size,*((uint32_t *)params->rt.taint_info), eip, cr3, ebp);
@@ -810,6 +835,40 @@ hookapi_hook_function_byname();
 
 }
 
+static int callback_test_summary(void)
+{
+
+	DECAF_printf("\n*****03.CallBack interfaces test summary*****\n");
+
+	DECAF_printf("%30s [%d]\n", vmi_callback[1], vmiTest01);
+	DECAF_printf("%30s [%d]\n", vmi_callback[2], vmiTest02);
+	DECAF_printf("%30s [%d]\n", vmi_callback[3], vmiTest03);
+	DECAF_printf("%30s [%d]\n", vmi_callback[4], vmiTest04);
+	DECAF_printf("%30s [%d]\n", vmi_callback[5], vmiTest05);
+	DECAF_printf("%30s [%d]\n", vmi_callback[6], vmiTest06);
+
+	DECAF_printf("%30s [%d]\n", decaf_callback[1], decafTest01);
+	DECAF_printf("%30s [%d]\n", decaf_callback[2], decafTest02);
+	DECAF_printf("%30s [%d]\n", decaf_callback[3], decafTest03);
+	DECAF_printf("%30s [%d]\n", decaf_callback[4], decafTest04);
+	DECAF_printf("%30s [%d]\n", decaf_callback[5], decafTest05);
+	DECAF_printf("%30s [%d]\n", decaf_callback[6], decafTest06);
+	DECAF_printf("%30s [%d]\n", decaf_callback[7], decafTest07);
+	DECAF_printf("%30s [%d]\n", decaf_callback[8], decafTest08);
+	DECAF_printf("%30s [%d]\n", decaf_callback[9], decafTest09);
+	DECAF_printf("%30s [%d]\n", decaf_callback[10], decafTest10);
+	DECAF_printf("%30s [%d]\n", decaf_callback[11], decafTest11);
+	DECAF_printf("%30s [%d]\n", decaf_callback[12], decafTest12);
+	DECAF_printf("%30s [%d]\n", decaf_callback[13], decafTest13);
+	DECAF_printf("%30s [%d]\n", decaf_callback[14], decafTest14);
+	DECAF_printf("%30s [%d]\n", decaf_callback[15], decafTest15);
+
+	DECAF_printf("%30s [%d]\n","OptimizedBlockBeginCallback", decafTest16);
+	DECAF_printf("%30s [%d]\n","OptimizedBlockEndCallback", decafTest17);
+
+	return 0;
+}
+
 static int decaf_test_init(void)
 {
 	//DECAF_output_init(NULL);
@@ -817,6 +876,9 @@ static int decaf_test_init(void)
 
 	uint32_t begin_eip = -1;
 	char *key = "t"; 
+
+	rec_timer2 = qemu_new_timer_ns(vm_clock, decaf_test_cleanup, 0);
+	qemu_mod_timer(rec_timer2, qemu_get_clock_ns(vm_clock) + get_ticks_per_sec() * 5); 
 
 	/*
 	//VMI
@@ -961,12 +1023,6 @@ static int decaf_test_init(void)
 		DECAF_printf("Could not register for the event: [OptimizedBlockEndCallback]\n");
 	}
 
-	targetname[0] = '\0';
-	targetcr3 = 0;
-	targetpid = (uint32_t)(-1);
-
-	//do_test(NULL, NULL);
-
 	return (0);
 }
 
@@ -1013,8 +1069,53 @@ static int vmi_test_init(void)
 	return (0);
 }
 
+static void vmi_test_cleanup(void)
+{
+	VMI_unregister_callback(VMI_CREATEPROC_CB, vmi_handle01); 
+	VMI_unregister_callback(VMI_REMOVEPROC_CB, vmi_handle02); 
+	VMI_unregister_callback(VMI_LOADMODULE_CB, vmi_handle03); 
+	VMI_unregister_callback(VMI_REMOVEMODULE_CB, vmi_handle04); 
+	VMI_unregister_callback(VMI_LOADMAINMODULE_CB, vmi_handle05); 
+	VMI_unregister_callback(VMI_PROCESSBEGIN_CB, vmi_handle06); 
+	DECAF_printf("VMI clean up.\n");
+
+	//void qemu_del_timer(QEMUTimer *ts)
+	qemu_del_timer(rec_timer);
+	decaf_test_init();
+}
+
+static void decaf_test_cleanup(void)
+{
+	DECAF_unregister_callback(DECAF_BLOCK_BEGIN_CB, decaf_handle01);//Instruction
+	DECAF_unregister_callback(DECAF_BLOCK_END_CB, decaf_handle02);//Instruction
+	DECAF_unregister_callback(DECAF_INSN_BEGIN_CB, decaf_handle03);//invoked before this instruction is executed
+	DECAF_unregister_callback(DECAF_INSN_END_CB, decaf_handle04);//invoked after this instruction is executed
+	DECAF_unregister_callback(DECAF_MEM_READ_CB, decaf_handle05);//Mem read/write
+	DECAF_unregister_callback(DECAF_MEM_WRITE_CB, decaf_handle06);//Mem read/write
+
+	DECAF_unregister_callback(DECAF_EIP_CHECK_CB, decaf_handle07);//for every function call, it will invoked this callback before it jump to target function specified by EIP.
+
+	DECAF_unregister_callback(DECAF_KEYSTROKE_CB, decaf_handle08);//invoked when system read a keystroke from ps2 driver
+	DECAF_unregister_callback(DECAF_NIC_REC_CB, decaf_handle09);//network “-device ne2k_pci,netdev=mynet”
+	DECAF_unregister_callback(DECAF_NIC_SEND_CB, decaf_handle10);//network “-device ne2k_pci,netdev=mynet”
+	DECAF_unregister_callback(DECAF_OPCODE_RANGE_CB, decaf_handle11);
+	DECAF_unregister_callback(DECAF_TLB_EXEC_CB, decaf_handle12);
+	DECAF_unregister_callback(DECAF_READ_TAINTMEM_CB, decaf_handle13);
+	DECAF_unregister_callback(DECAF_WRITE_TAINTMEM_CB, decaf_handle14);
+
+	//DECAF_unregister_callback(DECAF_BLOCK_TRANS_CB, decaf_handle15);
+
+	DECAF_unregisterOptimizedBlockBeginCallback(optimizedBlockBeginH);
+	DECAF_unregisterOptimizedBlockEndCallback(optimizedBlockEndH);
+	DECAF_printf("DECAF clean up.\n");
+
+	qemu_del_timer(rec_timer2);
+	callback_test_summary();
+}
+
 static void test_cleanup(void)
 {
+
 	VMI_unregister_callback(VMI_CREATEPROC_CB, vmi_handle01); 
 	VMI_unregister_callback(VMI_REMOVEPROC_CB, vmi_handle02); 
 	VMI_unregister_callback(VMI_LOADMODULE_CB, vmi_handle03); 
