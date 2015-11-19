@@ -130,7 +130,7 @@ int VMI_find_cr3_by_pid_c(uint32_t pid)
 
 }
 
-int VMI_find_pid_ebp_c(uint32_t ebp)
+int VMI_find_pid_by_ebp_c(uint32_t ebp)
 {
 	process * p = NULL;
 	p  = VMI_find_process_by_ebp(ebp);
